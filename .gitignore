@@ -210,3 +210,4 @@ __marimo__/
 *.wsuo
 *.sqlite
 *.json
+/database.db
