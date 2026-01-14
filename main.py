@@ -10,6 +10,8 @@ from fastapi.routing import APIRouter
 from sqlmodel import SQLModel, Field, Session, select, create_engine, col
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 # ==========================================
 # 1. 基础设施配置
@@ -155,6 +157,8 @@ app = FastAPI(
     version="3.1.0",
     lifespan=lifespan
 )
+# 挂载静态文件目录 (允许访问 js/css/img)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -182,13 +186,8 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 app.include_router(router)
 
-@app.get("/", tags=["Home"])
-def root():
-    return {
-        "message": "System Ready", 
-        "time_utc": datetime.now(timezone.utc),
-        "db_driver": engine.dialect.name
-    }
-
+@app.get("/")
+async def read_index():
+    return FileResponse("static/index.html")
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

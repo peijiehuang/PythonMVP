@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SaaS Dashboard</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        primary: '#4F46E5', // Indigo-600 (高级蓝)
+                        surface: '#ffffff',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+        }
+
+        /* 背景弥散光效果 */
+        .ambient-light {
+            position: fixed;
+            top: -20%;
+            left: -10%;
+            width: 50%;
+            height: 50%;
+            background: radial-gradient(circle, rgba(79, 70, 229, 0.15) 0%, rgba(255, 255, 255, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .ambient-light-2 {
+            position: fixed;
+            bottom: -20%;
+            right: -10%;
+            width: 50%;
+            height: 50%;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* 列表项悬浮微动效 */
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 隐藏滚动条但保留功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+
+<body class="text-slate-800 min-h-screen relative overflow-x-hidden">
+
+    <div class="ambient-light"></div>
+    <div class="ambient-light-2"></div>
+
+    <div id="app" class="max-w-5xl mx-auto py-12 px-6">
+
+        <div class="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+            <div>
+                <div class="text-xs font-bold text-primary tracking-widest uppercase mb-2">Workspace</div>
+                <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">
+                    Dashboard <span class="text-slate-300">/</span> Overview
+                </h1>
+                <p class="text-slate-500 mt-2 font-light">Manage your projects and monitor status efficiently.</p>
+            </div>
+
+            <div class="flex gap-3 w-full md:w-auto">
+                <div class="relative group w-full md:w-64">
+                    <input type="text" v-model="keyword" @keyup.enter="fetchItems" placeholder="Type to search..."
+                        class="input input-bordered w-full bg-white/80 backdrop-blur border-slate-200 focus:border-primary focus:ring-4 focus:ring-primary/10 rounded-xl pl-10 transition-all" />
+                    <span
+                        class="absolute left-3.5 top-3 text-slate-400 group-focus-within:text-primary transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </span>
+                </div>
+
+                <button
+                    class="btn btn-primary border-none bg-primary hover:bg-indigo-700 text-white shadow-lg shadow-primary/30 rounded-xl px-6"
+                    @click="openModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    New Item
+                </button>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <div v-if="loading" class="flex flex-col items-center justify-center py-20 space-y-4">
+                <span class="loading loading-spinner loading-lg text-primary"></span>
+                <span class="text-slate-400 text-sm animate-pulse">Syncing data...</span>
+            </div>
+
+            <div v-else v-for="item in items" :key="item.id"
+                class="card-hover bg-white/70 backdrop-blur-sm border border-white/50 p-5 rounded-2xl flex items-center justify-between group">
+
+                <div class="flex items-center gap-6">
+                    <div class="w-12 h-12 rounded-2xl flex items-center justify-center"
+                        :class="item.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'">
+                        <svg v-if="item.is_active" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                            stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                        </svg>
+                    </div>
+
+                    <div>
+                        <h3 class="font-bold text-lg text-slate-800">{{ item.name }}</h3>
+                        <p class="text-sm text-slate-500 font-normal mt-0.5 line-clamp-1 max-w-md">
+                            {{ item.description || 'No description provided.' }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-8">
+                    <div class="text-right hidden sm:block">
+                        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Updated</div>
+                        <div class="text-sm font-medium text-slate-600">{{ formatTime(item.updated_at) }}</div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button
+                            class="btn btn-circle btn-sm btn-ghost text-slate-400 hover:bg-primary/10 hover:text-primary transition-colors"
+                            @click="openModal(item)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                        </button>
+                        <button
+                            class="btn btn-circle btn-sm btn-ghost text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                            @click="deleteItem(item.id)">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="!loading && items.length === 0"
+                class="border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center bg-slate-50/50">
+                <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+                    ✨</div>
+                <h3 class="text-lg font-bold text-slate-700">Start your collection</h3>
+                <p class="text-slate-500 text-sm mt-1 mb-6">Create your first item to get started.</p>
+                <button class="btn btn-outline btn-primary btn-sm rounded-lg" @click="openModal()">Create Now</button>
+            </div>
+        </div>
+
+        <dialog ref="item_modal" class="modal backdrop-blur-sm">
+            <div
+                class="modal-box bg-white p-8 rounded-3xl shadow-2xl border border-slate-100 max-w-md transform transition-all">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="font-bold text-xl text-slate-900">{{ formItem.id ? 'Edit Item' : 'New Item' }}</h3>
+                        <p class="text-xs text-slate-400 mt-1">Fill in the details below.</p>
+                    </div>
+                    <form method="dialog"><button @click="resetForm"
+                            class="btn btn-sm btn-circle btn-ghost text-slate-400 hover:bg-slate-100">✕</button></form>
+                </div>
+
+                <div class="space-y-5">
+                    <div class="form-control w-full">
+                        <label class="label pt-0"><span
+                                class="label-text text-xs font-bold text-slate-500 uppercase tracking-wider">Name</span></label>
+                        <input type="text" v-model="formItem.name" placeholder="e.g. Project Alpha"
+                            class="input input-bordered w-full bg-slate-50 border-slate-200 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 rounded-xl transition-all" />
+                    </div>
+
+                    <div class="form-control w-full">
+                        <label class="label pt-0"><span
+                                class="label-text text-xs font-bold text-slate-500 uppercase tracking-wider">Description</span></label>
+                        <textarea v-model="formItem.description"
+                            class="textarea textarea-bordered h-24 bg-slate-50 border-slate-200 focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 rounded-xl transition-all"
+                            placeholder="Add some details..."></textarea>
+                    </div>
+
+                    <div class="form-control">
+                        <label
+                            class="label cursor-pointer justify-between border border-slate-200 rounded-xl px-4 py-3 hover:bg-slate-50 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+                                        viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                                <div class="flex flex-col text-left">
+                                    <span class="label-text font-bold text-slate-700">Active Status</span>
+                                    <span class="text-[10px] text-slate-400">Enable or disable this item</span>
+                                </div>
+                            </div>
+                            <input type="checkbox" v-model="formItem.is_active"
+                                class="toggle toggle-success toggle-sm" />
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-action mt-8 grid grid-cols-2 gap-4">
+                    <form method="dialog" class="w-full">
+                        <button class="btn btn-ghost w-full rounded-xl hover:bg-slate-100"
+                            @click="resetForm">Cancel</button>
+                    </form>
+                    <button class="btn btn-primary w-full rounded-xl shadow-lg shadow-primary/20" @click="submitForm"
+                        :disabled="submitting">
+                        {{ submitting ? 'Saving...' : 'Save Changes' }}
+                    </button>
+                </div>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button @click="resetForm">close</button>
+            </form>
+        </dialog>
+
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                // API Configuration
+                const API_URL = '/items/';
+
+                // State
+                const items = ref([]);
+                const keyword = ref("");
+                const loading = ref(false);
+                const submitting = ref(false);
+                const item_modal = ref(null);
+                const formItem = reactive({ id: null, name: '', description: '', is_active: true });
+
+                // Actions
+                const fetchItems = async () => {
+                    loading.value = true;
+                    try {
+                        const params = keyword.value ? { keyword: keyword.value } : {};
+                        const res = await axios.get(API_URL, { params });
+                        items.value = res.data;
+                    } catch (e) { console.error(e); }
+                    finally { loading.value = false; }
+                };
+
+                const openModal = (item = null) => {
+                    if (item) Object.assign(formItem, item);
+                    else resetForm();
+                    item_modal.value.showModal();
+                };
+
+                const submitForm = async () => {
+                    if (!formItem.name) return;
+                    submitting.value = true;
+                    try {
+                        if (formItem.id) await axios.patch(API_URL + formItem.id, formItem);
+                        else {
+                            const { id, ...payload } = formItem;
+                            await axios.post(API_URL, payload);
+                        }
+                        item_modal.value.close();
+                        fetchItems();
+                    } catch (e) { alert("Error"); }
+                    finally { submitting.value = false; }
+                };
+
+                const deleteItem = async (id) => {
+                    if (!confirm("Are you sure?")) return;
+                    try { await axios.delete(API_URL + id); fetchItems(); } catch (e) { }
+                };
+
+                const resetForm = () => {
+                    formItem.id = null; formItem.name = ''; formItem.description = ''; formItem.is_active = true;
+                };
+
+                const formatTime = (iso) => {
+                    if (!iso) return '';
+                    const d = new Date(iso);
+                    const options = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+                    return d.toLocaleDateString('en-US', options);
+                };
+
+                onMounted(fetchItems);
+
+                return {
+                    items, keyword, loading, submitting, formItem, item_modal,
+                    fetchItems, openModal, submitForm, deleteItem, resetForm, formatTime
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>
