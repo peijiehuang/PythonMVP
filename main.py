@@ -1,20 +1,26 @@
 import uvicorn
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Depends, Query, Request
+from fastapi import FastAPI, HTTPException, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRouter
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlmodel import SQLModel, Field, Session, select, create_engine, col
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+# Security imports
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from pydantic import BaseModel
+
 # ==========================================
-# 1. 基础设施配置
+# 1. 基础设施配置 & 安全配置
 # ==========================================
 load_dotenv()
 
@@ -22,50 +28,115 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///database.db")
+SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 connect_args = {}
-# 优化：使用 startswith 更加严谨，防止密码中包含 sqlite 字符误判
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args, echo=False)
 
+# 密码哈希工具
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth2 方案 (Token URL 指向登录接口)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 # ==========================================
-# 2. 增强版数据模型 (MVVM/DTO 模式)
+# 2. 数据模型 (Models & Schemas)
 # ==========================================
 
-# 2.1 基础模型 (包含共享字段)
+# --- 用户相关 ---
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    hashed_password: str
+    is_active: bool = Field(default=True)
+
+class UserRead(BaseModel):
+    id: int
+    username: str
+    is_active: bool
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+# --- 物品相关 ---
 class ItemBase(SQLModel):
     name: str = Field(index=True, max_length=255, schema_extra={"example": "Apple Stock"})
     description: Optional[str] = Field(default=None, schema_extra={"example": "Tech Giant"})
     is_active: bool = Field(default=True)
 
-# 2.2 数据库表模型 (Entity) - 增加主键和时间
 class Item(ItemBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    
-    # 使用 UTC 时间，保证跨时区一致性
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# 2.3 创建模型 (DTO) - 剔除 id, created_at 等由后端生成的字段
 class ItemCreate(ItemBase):
     pass
 
-# 2.4 更新模型 (DTO) - 所有字段变为可选，允许只更新部分
 class ItemUpdate(SQLModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = None
 
-# 2.5 读取模型 (ViewModel) - 返回给前端的完整结构
 class ItemRead(ItemBase):
     id: int
     created_at: datetime
     updated_at: datetime
 
 # ==========================================
-# 3. 生命周期与依赖注入
+# 3. 鉴权辅助函数
+# ==========================================
+
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password):
+    return pwd_context.hash(password)
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+async def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Depends(get_session)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise credentials_exception
+        token_data = TokenData(username=username)
+    except JWTError:
+        raise credentials_exception
+    
+    user = session.exec(select(User).where(User.username == token_data.username)).first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+# ==========================================
+# 4. 生命周期管理 (创建默认用户)
 # ==========================================
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
@@ -75,40 +146,81 @@ async def lifespan(app: FastAPI):
     db_type = engine.dialect.name
     logger.info(f"🔄 系统启动中... 数据库类型: {db_type}")
     create_db_and_tables()
+    
+    # 初始化默认管理员用户
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.username == "admin")).first()
+        if not user:
+            logger.info("⚡ 创建默认管理员用户: admin / admin")
+            hashed_pwd = get_password_hash("admin")
+            admin_user = User(username="admin", hashed_password=hashed_pwd)
+            session.add(admin_user)
+            session.commit()
+    
     logger.info("✅ 数据库连接成功！")
     yield
     logger.info("🛑 系统正在关闭...")
 
-def get_session():
-    with Session(engine) as session:
-        yield session
+# ==========================================
+# 5. 路由模块
+# ==========================================
+app = FastAPI(title="Universal MVP API (Auth)", version="3.2.0", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ==========================================
-# 4. 路由模块
-# ==========================================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- 鉴权路由 ---
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.username == form_data.username)).first()
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/users/me", response_model=UserRead)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+# --- 业务路由 (保护写操作) ---
 router = APIRouter(prefix="/items", tags=["Items"])
 
-# ⚠️ 注意：response_model 使用 ItemRead，输入使用 ItemCreate
-@router.post("/", response_model=ItemRead, summary="创建新物品")
-def create_item(item_in: ItemCreate, session: Session = Depends(get_session)):
-    # 将 ItemCreate 转换为 Item 实体
+@router.post("/", response_model=ItemRead)
+def create_item(
+    item_in: ItemCreate, 
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user) # 🔒 Protected
+):
     db_item = Item.model_validate(item_in)
     session.add(db_item)
     session.commit()
     session.refresh(db_item)
     return db_item
 
-@router.get("/", response_model=List[ItemRead], summary="查询物品列表")
+@router.get("/", response_model=List[ItemRead])
 def read_items(
-    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    keyword: Optional[str] = Query(None),
     offset: int = 0, 
     limit: int = 100, 
     session: Session = Depends(get_session)
+    # 公开读取接口，无需 Depends(get_current_user)
 ):
     query = select(Item)
     if keyword:
         query = query.where(col(Item.name).contains(keyword))
-    # 倒序排列
     query = query.order_by(Item.created_at.desc())
     query = query.offset(offset).limit(limit)
     return session.exec(query).all()
@@ -121,18 +233,19 @@ def read_item(item_id: int, session: Session = Depends(get_session)):
     return item
 
 @router.patch("/{item_id}", response_model=ItemRead)
-def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(get_session)):
+def update_item(
+    item_id: int, 
+    item_in: ItemUpdate, 
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user) # 🔒 Protected
+):
     db_item = session.get(Item, item_id)
     if not db_item:
         raise HTTPException(status_code=404, detail="Item not found")
     
-    # exclude_unset=True 非常关键，只更新前端传过来的字段
     input_data = item_in.model_dump(exclude_unset=True)
-    
     for key, value in input_data.items():
         setattr(db_item, key, value)
-    
-    # 手动更新时间
     db_item.updated_at = datetime.now(timezone.utc)
     
     session.add(db_item)
@@ -141,7 +254,11 @@ def update_item(item_id: int, item_in: ItemUpdate, session: Session = Depends(ge
     return db_item
 
 @router.delete("/{item_id}")
-def delete_item(item_id: int, session: Session = Depends(get_session)):
+def delete_item(
+    item_id: int, 
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user) # 🔒 Protected
+):
     item = session.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -149,45 +266,11 @@ def delete_item(item_id: int, session: Session = Depends(get_session)):
     session.commit()
     return {"ok": True}
 
-# ==========================================
-# 5. App 配置与异常处理
-# ==========================================
-app = FastAPI(
-    title="Universal MVP API",
-    version="3.1.0",
-    lifespan=lifespan
-)
-# 挂载静态文件目录 (允许访问 js/css/img)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 优化：全局异常捕获，防止吞掉 404 等常规 HTTP 错误
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    # 如果已经是 HTTPException (如 404), 直接抛出，不当做 500 处理
-    if isinstance(exc, HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail},
-        )
-    
-    logger.error(f"❌ 全局未捕获异常: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"message": "Internal Server Error", "detail": str(exc)},
-    )
-
 app.include_router(router)
 
 @app.get("/")
 async def read_index():
     return FileResponse("static/index.html")
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

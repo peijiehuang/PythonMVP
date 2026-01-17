@@ -1,20 +1,34 @@
-# PythonMVP - 现代全栈快速开发脚手架
+# PythonMVP - 安全增强版全栈脚手架
 
-这是一个开箱即用的轻量级全栈 MVP (Minimum Viable Product) 项目模板。它展示了如何使用 Python 现代技术栈构建高性能、类型安全且易于扩展的 Web 应用。
+这是一个开箱即用的轻量级全栈 MVP (Minimum Viable Product) 项目模板。它展示了如何使用 Python 现代技术栈构建高性能、**安全**、类型安全且易于扩展的 Web 应用。
+
+## 🔐 安全特性 (Security Features) - NEW!
+
+本项目已集成完整的 **JWT (JSON Web Token)** 鉴权体系：
+*   **OAuth2 密码模式**: 标准的 `/token` 登录流程。
+*   **密码哈希**: 使用 `bcrypt` 进行加盐哈希存储，拒绝明文密码。
+*   **接口保护**: 写入操作 (`POST`, `PATCH`, `DELETE`) 强制要求登录，读取操作默认公开。
+*   **前端集成**: 实现了自动 Token 注入、登录模态框、401 自动登出拦截器。
+
+> **默认管理员账号**:
+> - Username: `admin`
+> - Password: `admin`
+> *(系统首次启动时自动创建)*
+
+---
 
 ## 🛠 技术栈
 
 ### 后端 (Backend)
-- **Framework**: [FastAPI](https://fastapi.tiangolo.com/) (高性能异步 Web 框架)
-- **ORM**: [SQLModel](https://sqlmodel.tiangolo.com/) (结合 SQLAlchemy 与 Pydantic 的最佳实践)
-- **Validation**: Pydantic v2 (严格的数据验证)
-- **Database**: SQLite (默认，可轻松切换至 PostgreSQL/MySQL)
+- **Framework**: [FastAPI](https://fastapi.tiangolo.com/)
+- **ORM**: [SQLModel](https://sqlmodel.tiangolo.com/)
+- **Auth**: Python-Jose (JWT), Passlib (Bcrypt), OAuth2
+- **Database**: SQLite (默认)
 
 ### 前端 (Frontend)
-- **Core**: [Vue.js 3](https://vuejs.org/) (Composition API)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [DaisyUI](https://daisyui.com/)
-- **HTTP Client**: Axios
-- **Architecture**: No-Build (无需 Node.js/Webpack 构建过程，由后端直接托管静态资源)
+- **Core**: Vue.js 3 (Composition API)
+- **Styling**: Tailwind CSS + DaisyUI
+- **HTTP**: Axios (拦截器处理 Token)
 
 ---
 
@@ -22,120 +36,72 @@
 
 ```text
 d:\Source\AI学习\PythonMVP\
-├── main.py                 # 核心入口：包含所有后端逻辑（模型、数据库、路由、配置）
-├── requirements.txt        # Python 依赖清单
-├── static\                 # 静态资源目录
-│   └── index.html          # 前端单页应用 (Vue3 + Tailwind)入口
-├── database.db             # SQLite 数据库文件 (自动生成)
-└── README.md               # 项目说明文档
+├── main.py                 # 核心：包含鉴权逻辑、User/Item模型、API路由
+├── requirements.txt        # 依赖清单 (新增 python-jose, passlib 等)
+├── static\                 # 静态资源
+│   └── index.html          # 前端 SPA：包含登录弹窗与鉴权逻辑
+├── database.db             # SQLite 数据库
+└── test_auth_flow.py       # 自动化鉴权测试脚本
 ```
-
-### 核心文件解析
-
-1.  **`main.py`**:
-    *   **基础设施**: 配置日志、数据库连接 (`engine`)、生命周期管理 (`lifespan`).
-    *   **数据模型**: 定义了 `Item` (数据库表) 以及对应的 DTO (`ItemCreate`, `ItemRead`)，实现了 **读写分离** 的模型设计。
-    *   **API 路由**: 实现了标准的 RESTful CRUD 接口 (`GET`, `POST`, `PATCH`, `DELETE`).
-    *   **静态托管**: 挂载 `/static` 目录并提供根路径 `/` 访问 `index.html`。
-
-2.  **`static/index.html`**:
-    *   一个完整的单页应用 (SPA)。
-    *   使用 `<script setup>` 风格编写 Vue 逻辑。
-    *   实现了数据的列表展示、搜索、新建模态框、编辑和删除功能。
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 环境准备
-确保已安装 Python 3.9+。
-
-### 2. 安装依赖
-在项目根目录下运行：
+### 1. 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. 启动服务
-直接运行 `main.py` 或使用 `uvicorn`：
+### 2. 启动服务
 ```bash
-# 方式 A (推荐开发使用)
 python main.py
-
-# 方式 B (生产模式)
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
-*启动后，系统会自动创建 `database.db` 数据库文件。*
+*启动后，系统会自动创建 `database.db` 并初始化 `admin` 用户。*
 
-### 4. 访问应用
+### 3. 访问应用
 *   **Web 界面**: [http://localhost:8000](http://localhost:8000)
-*   **API 文档 (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
-*   **API 调试 (ReDoc)**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+    *   尝试点击 "New Item"，会弹出登录框。使用 `admin`/`admin` 登录。
+*   **API 文档**: [http://localhost:8000/docs](http://localhost:8000/docs)
+    *   点击右上角 "Authorize" 按钮，输入账号密码即可解锁受保护接口。
+
+### 4. 运行自动化测试
+验证鉴权逻辑是否生效：
+```bash
+# 确保服务已在后台运行，然后执行：
+python test_auth_flow.py
+```
+预期输出：
+```text
+[OK] 公开接口 /items/ 访问成功
+[OK] 未登录保护生效 (401 Unauthorized)
+[OK] 登录成功，获取 Token: ...
+[OK] 带 Token 创建物品成功...
+```
 
 ---
 
-## 💡 二次开发指南 (如何加功能)
+## 💡 开发指南
 
-本项目的优势在于**修改即生效**，非常适合快速迭代。
+### 如何保护一个新的接口？
 
-### 场景 A：添加一个新的 API 方法 (Function)
+在 `main.py` 中，只需在路由函数中添加 `current_user` 依赖：
 
-**目标**：添加一个 "统计所有物品数量" 的接口。
+```python
+from fastapi import Depends
+from main import get_current_user, User
 
-1.  打开 `main.py`。
-2.  在 `router` 区域添加新函数：
-    ```python
-    from sqlmodel import func
+@router.get("/sensitive-data")
+def get_secret(current_user: User = Depends(get_current_user)):
+    return {"secret": "只有登录用户能看到我", "user": current_user.username}
+```
 
-    @router.get("/stats/count", summary="获取物品总数")
-    def count_items(session: Session = Depends(get_session)):
-        count = session.exec(select(func.count(Item.id))).one()
-        return {"total_items": count}
-    ```
-3.  保存文件，服务会自动重载。
-4.  访问 `/docs` 即可看到新接口。
+### 如何获取当前登录用户？
+`current_user` 对象即为当前登录的 `User` 数据库模型实例，包含 `id`, `username` 等字段。
 
 ---
 
-
-### 场景 B：添加一个新的数据实体 (Entity)
-
-**目标**：添加 "用户 (User)" 模块。
-
-1.  **定义模型 (`main.py`)**:
-    ```python
-    class User(SQLModel, table=True):
-        id: Optional[int] = Field(default=None, primary_key=True)
-        username: str
-        email: str
-    ```
-2.  **注册表结构**: 重启应用时，`SQLModel.metadata.create_all(engine)` 会自动创建新表。
-3.  **编写 CRUD**: 参考 `Item` 的 CRUD 逻辑复制一份，修改为 `User` 模型。
-
----
-
-
-### 场景 C：添加一个新的页面 (Page)
-
-由于本项目采用后端托管静态文件的方式，添加页面有两种策略：
-
-#### 策略 1：独立页面 (推荐简单场景)
-1.  在 `static/` 目录下新建 `dashboard.html` (可以复制 `index.html` 修改)。
-2.  在 `main.py` 中添加路由映射：
-    ```python
-    @app.get("/dashboard")
-    async def read_dashboard():
-        return FileResponse("static/dashboard.html")
-    ```
-3.  访问 `http://localhost:8000/dashboard`。
-
-#### 策略 2：前端路由 (Vue Router)
-如果需要复杂的单页应用体验，建议在 `index.html` 中引入 `vue-router` CDN，并修改前端逻辑接管 URL 变化，后端只需保留 `root` 路由即可。
-
----
-
-
-## 🔒 最佳实践提示
-1.  **数据库迁移**: 当前使用自动建表。生产环境建议引入 `alembic` 做版本管理。
-2.  **安全性**: 当前 API 未包含鉴权。建议添加 OAuth2 或 JWT Token 验证 (FastAPI 内置支持)。
-3.  **CORS**: 默认允许所有跨域 (`allow_origins=["*"]`)，上线前请修改为特定域名。
+## 🔒 生产环境注意事项
+1.  **修改 SECRET_KEY**: 在 `.env` 文件或环境变量中设置复杂的随机字符串。
+2.  **HTTPS**: OAuth2 必须在 HTTPS 下运行以保证安全。
+3.  **数据库**: 建议切换到 PostgreSQL。
