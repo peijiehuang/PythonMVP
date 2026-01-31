@@ -1,171 +1,171 @@
-# PythonMVP - 安全增强版全栈脚手架
+# Python MVP (FastAPI + SQLModel)
 
-这是一个开箱即用的轻量级全栈 MVP (Minimum Viable Product) 项目模板。它展示了如何使用 Python 现代技术栈构建高性能、**安全**、类型安全且易于扩展的 Web 应用。
-
-## 🔐 安全特性 (Security Features) - NEW!
-
-本项目已集成完整的 **JWT (JSON Web Token)** 鉴权体系：
-*   **OAuth2 密码模式**: 标准的 `/token` 登录流程。
-*   **密码哈希**: 使用 `bcrypt` 进行加盐哈希存储，拒绝明文密码。
-*   **接口保护**: 写入操作 (`POST`, `PATCH`, `DELETE`) 强制要求登录，读取操作默认公开。
-*   **前端集成**: 实现了自动 Token 注入、登录模态框、401 自动登出拦截器。
-
-> **默认管理员账号**:
-> - Username: `admin`
-> - Password: `admin`
-> *(系统首次启动时自动创建)*
+这是一个基于 **FastAPI** 和 **SQLModel** 构建的现代化 Python Web 架构。它采用清晰的层级设计，集成了 JWT 鉴权、自动数据库管理和 TDD 测试流程，旨在作为生产级 MVP 的标准模板。
 
 ---
 
-## 🛠 技术栈
+## 📖 核心开发教程：如何添加新功能 (Control/Router)
 
-### 后端 (Backend)
-- **Framework**: [FastAPI](https://fastapi.tiangolo.com/)
-- **ORM**: [SQLModel](https://sqlmodel.tiangolo.com/)
-- **Auth**: Python-Jose (JWT), Passlib (Bcrypt), OAuth2
-- **Database**: SQLite (默认)
+在本架构中，添加一个新功能（例如“笔记 Note”模块）通常遵循以下 **4 个标准步骤**：
 
-### 前端 (Frontend)
-- **Core**: Vue.js 3 (Composition API)
-- **Styling**: Tailwind CSS + DaisyUI
-- **HTTP**: Axios (拦截器处理 Token)
+### Step 1: 在 `models/models.py` 定义模型
+我们使用 SQLModel 的继承特性来复用字段，同时隔离“数据库表”和“API 接口数据结构”。
+
+```python
+# --- 笔记 (Note) 模型示例 ---
+class NoteBase(SQLModel):
+    title: str = Field(index=True, max_length=100)
+    content: str
+    is_public: bool = Field(default=False)
+
+# 1. 数据库表 (Table) - 对应数据库真实结构
+class Note(NoteBase, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+
+# 2. 创建请求 (Request Body) - 用于 POST 请求验证
+class NoteCreate(NoteBase):
+    pass
+
+# 3. 返回响应 (Response Body) - 用于 API 输出过滤敏感字段
+class NoteRead(NoteBase):
+    id: int
+    owner_id: int
+```
+
+### Step 2: 在 `routers/` 创建控制器
+新建 `routers/notes.py`。在这里处理业务逻辑、权限检查和数据库操作。
+
+```python
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
+from core.database import get_session
+from core.security import get_current_user
+from models.models import Note, NoteCreate, NoteRead, User
+
+router = APIRouter(prefix="/notes", tags=["Notes"])
+
+@router.post("/", response_model=NoteRead)
+def create_note(
+    note_in: NoteCreate, 
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user) # 🔒 只有登录用户可访问
+):
+    db_note = Note.model_validate(note_in)
+    db_note.owner_id = current_user.id
+    session.add(db_note)
+    session.commit()
+    session.refresh(db_note)
+    return db_note
+```
+
+### Step 3: 在 `main.py` 注册路由
+让 FastAPI 应用识别并启用你编写的控制器。
+
+```python
+# main.py
+from routers import auth, items, notes # 1. 导入
+
+# ...
+app.include_router(auth.router)
+app.include_router(items.router)
+app.include_router(notes.router)      # 2. 挂载
+```
+
+### Step 4: 编写测试验证 (TDD)
+在 `test_main.py` 中添加测试用例，确保功能正常。
+
+```python
+def test_create_note(client, token_headers):
+    response = client.post(
+        "/notes/",
+        headers=token_headers,
+        json={"title": "Test Note", "content": "Hello World"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Test Note"
+```
+
+---
+
+## ⚙️ 环境配置 (.env)
+
+项目使用 `python-dotenv` 管理配置。在根目录下创建 `.env` 文件：
+
+```env
+# 数据库连接串 (默认使用 SQLite)
+DATABASE_URL=sqlite:///database.db
+
+# JWT 签名密钥 (生产环境请务必更换)
+# 生成建议: openssl rand -hex 32
+SECRET_KEY=your_super_secret_safe_key_here
+
+# Token 过期时间 (分钟)
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+---
+
+## 🛠️ 技术栈与优势
+
+- **SQLModel**: 结合 SQLAlchemy 的强大 ORM 和 Pydantic 的严谨验证，一份代码搞定所有。
+- **依赖注入**: 利用 FastAPI 的 `Depends` 实现数据库 Session 和用户鉴权的解耦。
+- **自动文档**: 自动生成 Swagger UI (`/docs`) 和 ReDoc (`/redoc`)。
+- **安全加固**: 密码使用 `bcrypt` 强哈希存储，Token 采用 JWT 标准。
+
+---
+
+## 🚀 快速开始
+
+### 1. 环境准备 (Windows)
+
+```powershell
+# 创建并激活虚拟环境
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 安装依赖
+pip install -r requirements.txt
+```
+
+### 2. 运行项目
+
+```powershell
+# 运行服务
+python main.py
+```
+- **Swagger UI**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **前端演示**: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+
+### 3. 执行测试
+
+```powershell
+pytest -v
+```
 
 ---
 
 ## 📂 项目结构说明
 
 ```text
-d:\Source\AI学习\PythonMVP\
-├── main.py                 # 核心：包含鉴权逻辑、User/Item模型、API路由
-├── requirements.txt        # 依赖清单 (新增 python-jose, passlib 等)
-├── static\                 # 静态资源
-│   └── index.html          # 前端 SPA：包含登录弹窗与鉴权逻辑
-├── database.db             # SQLite 数据库
-└── test_auth_flow.py       # 自动化鉴权测试脚本
+├── main.py             # 入口文件：组装路由、生命周期钩子
+├── .env                # 环境配置文件 (敏感信息)
+├── core/               # 核心配置层
+│   ├── config.py       # Pydantic Settings 配置读取
+│   ├── database.py     # Session 引擎与 get_session 注入函数
+│   └── security.py     # JWT、密码 Hash、当前用户获取逻辑
+├── models/             # 数据模型层
+│   └── models.py       # SQLModel (Table & Schema)
+├── routers/            # 控制器层 (Business Logic)
+│   ├── auth.py         # 认证路由 (Login/Token)
+│   └── items.py        # 业务逻辑 CRUD 示例 (含分页、搜索)
+├── static/             # 静态资源 (前后端分离的前端代码)
+└── test_main.py        # 自动化测试套件 (Pytest)
 ```
 
----
+## 🤝 开发建议
 
-## 🚀 快速开始 (Quick Start)
-
-为了保证开发环境的纯净与依赖隔离，请**务必**使用虚拟环境运行本项目。
-
-### 1. 环境初始化 (Setup)
-
-#### Windows (PowerShell)
-```powershell
-# 1. 创建虚拟环境 (仅需执行一次)
-python -m venv .venv
-
-# 2. 激活环境
-.\.venv\Scripts\activate.ps1
-```
-
-#### Windows (CMD)
-```cmd
-:: 1. 创建虚拟环境
-python -m venv .venv
-
-:: 2. 激活环境
-.\.venv\Scripts\activate.bat
-```
-
-#### macOS / Linux
-```bash
-# 1. 创建虚拟环境
-python3 -m venv .venv
-
-# 2. 激活环境
-source .venv/bin/activate
-```
-
-> **提示**: 激活成功后，命令行提示符前会出现 `(.venv)` 字样。
-
-### 2. 安装依赖
-确保虚拟环境已激活，然后执行：
-```bash
-pip install -r requirements.txt
-```
-
-### 3. 启动服务
-```bash
-python main.py
-```
-*启动后，系统会自动创建 `database.db` 并初始化 `admin` 用户。*
-
-### 3. 访问应用
-*   **Web 界面**: [http://localhost:8000](http://localhost:8000)
-    *   尝试点击 "New Item"，会弹出登录框。使用 `admin`/`admin` 登录。
-*   **API 文档**: [http://localhost:8000/docs](http://localhost:8000/docs)
-    *   点击右上角 "Authorize" 按钮，输入账号密码即可解锁受保护接口。
-
-### 4. 运行自动化测试
-验证鉴权逻辑是否生效：
-```bash
-# 确保服务已在后台运行，然后执行：
-python test_auth_flow.py
-```
-预期输出：
-```text
-[OK] 公开接口 /items/ 访问成功
-[OK] 未登录保护生效 (401 Unauthorized)
-[OK] 登录成功，获取 Token: ...
-[OK] 带 Token 创建物品成功...
-```
-
----
-
-## 💡 开发指南 (Development Guide)
-
-### 🛡️ 接口鉴权指南 (API Security Guide)
-
-FastAPI 通过依赖注入 (`Depends`) 轻松管理接口权限。
-
-#### 1. 允许匿名访问 (Public / Anonymous)
-**不需要**添加任何鉴权依赖，任何用户均可访问。
-
-```python
-@app.get("/items/public")
-def read_public_items():
-    # ❌ 无法获取当前用户信息
-    return {"msg": "任何人都可以看到这条消息"}
-```
-
-#### 2. 需要 Token 访问 (Authenticated)
-在路由参数中添加 `current_user: User = Depends(get_current_user)`。
-*   如果请求未携带有效 Token，FastAPI 会自动抛出 `401 Unauthorized` 错误。
-*   代码块内部可直接使用 `current_user` 对象。
-
-```python
-from fastapi import Depends
-from main import get_current_user, User
-
-@app.get("/items/protected")
-def read_user_items(current_user: User = Depends(get_current_user)):
-    # ✅ 此时 current_user 已通过验证
-    return {
-        "msg": "您已登录",
-        "username": current_user.username,
-        "user_id": current_user.id
-    }
-```
-
-#### 🔬 为什么这样写就能保护接口？ (Under the Hood)
-当你在参数中声明 `Depends(get_current_user)` 时，FastAPI 会执行以下连锁反应：
-
-1.  **提取 Token**: `get_current_user` 依赖于 `oauth2_scheme`，它会自动检查 HTTP 请求头 `Authorization: Bearer <token>`。
-2.  **验证 Token**: 拿到 Token 后，系统尝试用 `SECRET_KEY` 对其进行解码和验证（检查签名、有效期）。
-3.  **阻断请求**:
-    *   如果 Token **缺失**或**无效**，依赖函数直接抛出 `HTTPException` (401 错误)。
-    *   **关键点**：由于异常抛出，**后续的路由函数体根本不会被执行**。这就实现了“保护”。
-4.  **注入对象**: 只有验证通过，才会从数据库查询 User 对象并注入给 `current_user` 参数，让你的业务逻辑直接可用。
-
-### 如何获取当前登录用户？
-`current_user` 对象即为当前登录的 `User` 数据库模型实例，包含 `id`, `username` 等字段。
-
----
-
-## 🔒 生产环境注意事项
-1.  **修改 SECRET_KEY**: 在 `.env` 文件或环境变量中设置复杂的随机字符串。
-2.  **HTTPS**: OAuth2 必须在 HTTPS 下运行以保证安全。
-3.  **数据库**: 建议切换到 PostgreSQL。
+1. **复杂查询**：推荐使用 `sqlmodel.select` 配合 `col(Model.field).contains()` 等高级语法。
+2. **异步支持**：虽然本项目目前使用同步 Session，但 FastAPI 原生支持 `async def`。如果 IO 密集型操作较多，可考虑迁移至 `ext.asyncio`。
+3. **安全性**：**SECRET_KEY** 严禁提交至 Git 仓库。
