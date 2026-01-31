@@ -46,14 +46,48 @@ d:\Source\AI学习\PythonMVP\
 
 ---
 
-## 🚀 快速开始
+## 🚀 快速开始 (Quick Start)
 
-### 1. 安装依赖
+为了保证开发环境的纯净与依赖隔离，请**务必**使用虚拟环境运行本项目。
+
+### 1. 环境初始化 (Setup)
+
+#### Windows (PowerShell)
+```powershell
+# 1. 创建虚拟环境 (仅需执行一次)
+python -m venv .venv
+
+# 2. 激活环境
+.\.venv\Scripts\activate.ps1
+```
+
+#### Windows (CMD)
+```cmd
+:: 1. 创建虚拟环境
+python -m venv .venv
+
+:: 2. 激活环境
+.\.venv\Scripts\activate.bat
+```
+
+#### macOS / Linux
+```bash
+# 1. 创建虚拟环境
+python3 -m venv .venv
+
+# 2. 激活环境
+source .venv/bin/activate
+```
+
+> **提示**: 激活成功后，命令行提示符前会出现 `(.venv)` 字样。
+
+### 2. 安装依赖
+确保虚拟环境已激活，然后执行：
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 启动服务
+### 3. 启动服务
 ```bash
 python main.py
 ```
@@ -81,20 +115,50 @@ python test_auth_flow.py
 
 ---
 
-## 💡 开发指南
+## 💡 开发指南 (Development Guide)
 
-### 如何保护一个新的接口？
+### 🛡️ 接口鉴权指南 (API Security Guide)
 
-在 `main.py` 中，只需在路由函数中添加 `current_user` 依赖：
+FastAPI 通过依赖注入 (`Depends`) 轻松管理接口权限。
+
+#### 1. 允许匿名访问 (Public / Anonymous)
+**不需要**添加任何鉴权依赖，任何用户均可访问。
+
+```python
+@app.get("/items/public")
+def read_public_items():
+    # ❌ 无法获取当前用户信息
+    return {"msg": "任何人都可以看到这条消息"}
+```
+
+#### 2. 需要 Token 访问 (Authenticated)
+在路由参数中添加 `current_user: User = Depends(get_current_user)`。
+*   如果请求未携带有效 Token，FastAPI 会自动抛出 `401 Unauthorized` 错误。
+*   代码块内部可直接使用 `current_user` 对象。
 
 ```python
 from fastapi import Depends
 from main import get_current_user, User
 
-@router.get("/sensitive-data")
-def get_secret(current_user: User = Depends(get_current_user)):
-    return {"secret": "只有登录用户能看到我", "user": current_user.username}
+@app.get("/items/protected")
+def read_user_items(current_user: User = Depends(get_current_user)):
+    # ✅ 此时 current_user 已通过验证
+    return {
+        "msg": "您已登录",
+        "username": current_user.username,
+        "user_id": current_user.id
+    }
 ```
+
+#### 🔬 为什么这样写就能保护接口？ (Under the Hood)
+当你在参数中声明 `Depends(get_current_user)` 时，FastAPI 会执行以下连锁反应：
+
+1.  **提取 Token**: `get_current_user` 依赖于 `oauth2_scheme`，它会自动检查 HTTP 请求头 `Authorization: Bearer <token>`。
+2.  **验证 Token**: 拿到 Token 后，系统尝试用 `SECRET_KEY` 对其进行解码和验证（检查签名、有效期）。
+3.  **阻断请求**:
+    *   如果 Token **缺失**或**无效**，依赖函数直接抛出 `HTTPException` (401 错误)。
+    *   **关键点**：由于异常抛出，**后续的路由函数体根本不会被执行**。这就实现了“保护”。
+4.  **注入对象**: 只有验证通过，才会从数据库查询 User 对象并注入给 `current_user` 参数，让你的业务逻辑直接可用。
 
 ### 如何获取当前登录用户？
 `current_user` 对象即为当前登录的 `User` 数据库模型实例，包含 `id`, `username` 等字段。
