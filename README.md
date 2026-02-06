@@ -1,205 +1,119 @@
-# 🌌 Cosmic MVP - 全栈全异步极速开发框架 (v3.5)
+# 🌌 Cosmic MVP - 全栈极速开发框架 (v3.8 易用增强版)
 
-**Cosmic MVP** 是一款专为独立开发者和初创团队设计的“保姆级”开发脚手架。它融合了 **FastAPI** 的极致速度、**SQLModel** 的简洁开发体验以及 **Alembic** 的严谨数据库治理。
-
-核心目标：**让您把 90% 的精力花在业务逻辑上，剩下的 10% 交给框架。**
-
----
-
-## 🧭 目录
-- [🎯 核心优势](#-核心优势)
-- [📂 项目结构全景图](#-项目结构全景图)
-- [🚀 快速开始：1分钟跑通项目](#-快速开始1分钟跑通项目)
-- [🏗️ 后端开发：标准四步开发法](#-后端开发标准四步开发法)
-- [⏰ 后台服务：可视化插件式任务系统](#-后台服务可视化插件式任务系统)
-- [🎨 前端开发：前后端联动实战](#-前端开发前后端联动实战)
-- [🧪 质量保障：自动化测试](#-质量保障自动化测试)
-- [📡 生产部署：Docker与宝塔面板](#-生产部署docker与宝塔面板)
-- [💡 常见问题排查 (FAQ)](#-常见问题排查-faq)
+**Cosmic MVP** 是一个专为“想快速把想法变成产品”的开发者设计的脚手架。  
+它不仅是一个后端框架，更是一套**完整的生产力方案**：自带安装向导、自带后台任务监控、自带漂亮的 UI 界面。
 
 ---
 
-## 🎯 核心优势
-
-- **全异步设计**: 从数据库驱动 (aiosqlite) 到接口处理，全链路非阻塞，性能远超同步框架。
-- **智能安装向导**: 告别手动修改 `.env`。首次启动访问 Web 界面即可完成系统配置。
-- **插件式任务系统**: 只需在指定目录写代码，任务自动入库、自动显示在管理页面。
-- **统一响应协议**: 无论是业务成功还是程序崩溃，前端收到的永远是标准 JSON 格式。
-- **开发脚本化**: `run.py` 封装了一切常用命令，无需记忆复杂的 CLI 参数。
-
----
-
-## 📂 项目结构全景图
-
-理解目录结构是精通框架的第一步：
-
-```text
-├── alembic/             # 数据库迁移记录（版本管理）
-├── app/
-│   ├── api/             # 接口层
-│   │   ├── endpoints/   # 具体的业务接口（如：用户、物品、任务管理）
-│   │   ├── api.py       # 路由主汇总入口
-│   │   └── deps.py      # 核心依赖注入（数据库会话、当前登录用户）
-│   ├── core/            # 系统内核
-│   │   ├── config.py    # 强类型配置管理（BaseSettings）
-│   │   ├── database.py  # 异步数据库引擎与连接池
-│   │   ├── security.py  # JWT 加密与密码哈希工具
-│   │   ├── scheduler.py # 异步任务调度引擎
-│   │   └── lifespan.py  # 应用启动/关闭时的钩子函数
-│   ├── models/          # 数据库物理表模型 (SQLModel)
-│   ├── schemas/         # 数据传输协议 (Pydantic & 统一响应模型)
-│   └── tasks/           # 后台定时任务插件目录
-├── static/              # 静态资源（含安装向导、内置仪表盘 Demo）
-├── frontend/            # 前端示例与拦截器配置
-├── main.py              # 程序主启动文件
-├── run.py               # 🚀 万能开发脚本（推荐使用）
-└── test_main.py         # 全自动异步测试脚本
-```
+## 🧭 快速索引
+- [🚩 小白避坑指南（必看！）](#-小白避坑指南必看)
+- [🚀 3分钟快速上手](#-3分钟快速上手)
+- [🛠️ 怎么开发一个新功能？(保姆级教程)](#️-怎么开发一个新功能保姆级教程)
+- [⏰ 怎么写后台定时任务？](#-怎么写后台定时任务)
+- [📂 目录结构（大白话版）](#-目录结构大白话版)
 
 ---
 
-## 🚀 快速开始：1分钟跑通项目
+## 🚩 小白避坑指南（必看！）
 
-### 1. 环境隔离 (重要)
-```powershell
-# Windows
+在开发过程中，请务必记住以下几点，能帮你节省 80% 的排错时间：
+
+1.  **Python 的“等一等” (`await`)**：  
+    本项目是异步框架。只要你操作数据库（例如 `session.add`, `session.commit`），前面**必须**写 `await`。  
+    ❌ 错误：`session.commit()`  
+    ✅ 正确：`await session.commit()`
+
+2.  **修改代码后要“同步”数据库**：  
+    如果你在 `models.py` 里增加了一个字段或一个新表，数据库并不会自动感知。  
+    你**必须**在命令行运行：`python run.py mig`，然后按提示输入一个名字。
+
+3.  **注意缩进！**  
+    Python 对缩进非常敏感。如果报错 `IndentationError`，请检查你的代码行首是否有乱入的空格。
+
+4.  **管理员登录**：  
+    默认账号/密码是 `admin` / `admin`。如果你忘了，删除文件夹里的 `.env` 文件重新刷新页面即可重设。
+
+---
+
+## 🚀 3分钟快速上手
+
+### 1. 准备环境
+```bash
+# 1. 创建虚拟环境 (像在电脑里建一个独立小黑屋，防止库冲突)
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# Linux / macOS
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 安装依赖
+# 2. 激活它
+.\.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Mac/Linux
+# 3. 安装工具包
 pip install -r requirements.txt
 ```
 
-### 2. 启动智能安装
-执行以下命令开启开发服务器：
+### 2. 启动并安装
 ```bash
 python run.py dev
 ```
-启动后，浏览器访问：[http://localhost:8000/install](http://localhost:8000/install)
-
-**您只需在页面上：**
-1. 输入项目名称。
-2. 设置您的管理员账号和密码。
-3. 系统将自动生成 `.env` 密钥并同步数据库。
+启动后访问：[http://localhost:8000/install](http://localhost:8000/install)  
+点点鼠标，设置一下管理员，你就拥有了一个完整的系统。
 
 ---
 
-## 🏗️ 后端开发：标准四步开发法
+## 🛠️ 怎么开发一个新功能？(保姆级教程)
 
-假设我们要增加一个“反馈 (Feedback)”功能：
+假设你想做一个“笔记记录”功能：
 
-### 第一步：定义模型 (`app/models/models.py`)
+### 第一步：画好笔记的样子 (`app/models/models.py`)
 ```python
-class Feedback(SQLModel, table=True):
+class Note(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    content: str = Field(description="反馈内容")
-    user_id: int = Field(foreign_key="user.id")
+    title: str = Field(description="笔记标题")
+    content: str = Field(description="内容")
 ```
 
-### 第二步：定义验证协议 (`app/schemas/schemas.py`)
+### 第二步：告诉数据库 (`python run.py mig`)
+在命令行输入这行命令，它是全自动的。
+
+### 第三步：写接口逻辑 (`app/api/endpoints/notes.py`)
 ```python
-class FeedbackCreate(BaseModel):
-    content: str
+from app.api.deps import SessionDep, CurrentUser
+from app.schemas.responses import resp_ok
+
+@router.post("/add")
+async def add_note(title: str, content: str, session: SessionDep):
+    new_note = Note(title=title, content=content)
+    session.add(new_note)
+    await session.commit() # 别忘了 await!
+    return resp_ok(data=new_note, message="笔记保存成功")
 ```
 
-### 第三步：自动同步数据库
-```bash
-python run.py mig
-# 输入: "add feedback"
-```
+---
 
-### 第四步：编写业务路由 (`app/api/endpoints/feedback.py`)
+## ⏰ 怎么写后台定时任务？
+
+Cosmic MVP 的后台任务是“即插即用”的：
+
+1.  在 `app/tasks/` 下新建个 `my_job.py`。
+2.  粘贴以下代码：
 ```python
-@router.post("/")
-async def post_feedback(data: FeedbackCreate, session: SessionDep, user: CurrentUser):
-    # SessionDep 自动提供数据库连接，CurrentUser 自动获取登录人
-    new_fb = Feedback.model_validate(data, update={"user_id": user.id})
-    session.add(new_fb)
-    await session.commit()
-    return resp_ok(data=new_fb) # 统一格式返回
+from app.core.scheduler import register_task, task_print
+
+@register_task("自动清理垃圾记录")
+async def my_clean_task():
+    task_print("清理任务启动中...") # 这里的文字会实时显示在网页上
+    # 在这里写你的清理代码
+    task_print("清理完毕！")
 ```
+3.  打开浏览器访问 [http://localhost:8000/static/tasks.html](http://localhost:8000/static/tasks.html)。  
+    你会发现“自动清理垃圾记录”已经出现在列表里了，你可以随便改它的执行频率。
 
 ---
 
-## ⏰ 后台服务：可视化插件式任务系统
+## 📂 目录结构（大白话版）
 
-Cosmic MVP 让后台开发变得前所未有的简单：
-
-1.  **极简开发**: 在 `app/tasks/` 下新建 `cleaner.py`。
-2.  **自动注入**:
-    ```python
-    from app.core.scheduler import register_task, task_print
-
-    @register_task("过期数据清理")
-    async def clean_job():
-        task_print("开始扫描...") # 日志会出现在网页端
-        # 业务逻辑...
-        task_print("清理完成 ✅")
-    ```
-3.  **实时管控**: 在主页点击“时钟图标”，您可以：
-    - **热修改频率**: 在网页上改个数字（如从 10 分钟改为 1 分钟），立即生效。
-    - **实时日志**: 每一秒的任务运行状态、耗时、报错信息全掌握。
+- **`app/api/`**: 所有的接口（URL路径）都在这里。
+- **`app/models/`**: 数据库长什么样，都在这里定义。
+- **`app/tasks/`**: 所有的定时任务放在这里。
+- **`static/`**: 网页前端页面。
+- **`run.py`**: **你的万能助手**。运行 `python run.py` 看看它能帮你做什么。
 
 ---
-
-## 🎨 前端开发：前后端联动实战
-
-### 1. 响应结构
-无论成功还是失败，接口返回格式永远固定：
-`{ "success": true, "data": ..., "message": "..." }`
-
-### 2. 前端拦截器示例 (`frontend/api-client-example.js`)
-我们为您封装好了 Axios 拦截器，使用它开发页面：
-```javascript
-import api from './api-client-example';
-
-// 拿到的是直接的业务对象数据，不再需要 .data.data
-const me = await api.get('/auth/me');
-console.log("当前用户:", me.username);
-```
-
----
-
-## 🧪 质量保障：自动化测试
-
-**MVP 不代表马虎。** 在提交代码前，请确保测试通过：
-```bash
-python run.py test
-```
-该命令会自动创建一个内存中的“临时数据库”，模拟真实请求流程，确保您的增删查改逻辑完全正确。
-
----
-
-## 📡 生产部署：Docker与宝塔面板
-
-### 1. Docker 部署 (生产环境)
-```bash
-docker-compose up -d --build
-```
-
-### 2. 宝塔面板部署 (小白指南)
-1.  上传项目文件。
-2.  打开“Python项目管理器”，点击“添加项目”。
-3.  **启动文件**选 `main.py`，端口填 `8000`。
-4.  在“反向代理”中将域名指向 `http://127.0.0.1:8000`。
-5.  访问域名，进入安装向导，完成部署。
-
----
-
-## 💡 常见问题排查 (FAQ)
-
-- **Q: 为什么我访问接口报 404？**
-  - **A**: 请检查 URL 是否带有 `/api/v1` 前缀。
-- **Q: 为什么后台任务没有运行？**
-  - **A**: 请在管理页面确认该任务的“启用”开关已打开。
-- **Q: 如何修改管理员密码？**
-  - **A**: 删除根目录下的 `.env` 文件并刷新页面，重新进入安装向导（业务数据会保留）。
-- **Q: 数据库被锁定了怎么办？**
-  - **A**: SQLite 在极高并发写入时会锁定。如果业务量大，请在 `.env` 中将 `DATABASE_URL` 切换为 PostgreSQL。
-
----
-**Cosmic MVP** - 愿您的每个 Idea 都能以最快、最稳的方式惊艳世界。🚀
+**提示**：如果你在开发中遇到任何困难，请查看 `/static/tasks.html` 中的日志输出，那里有最详细的报错提示。🚀
