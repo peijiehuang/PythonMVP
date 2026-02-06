@@ -211,3 +211,4 @@ __marimo__/
 *.sqlite
 *.json
 /database.db
+/GEMINI.md
