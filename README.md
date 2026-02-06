@@ -175,4 +175,17 @@ DATABASE_URL=postgresql://user:password@localhost:5432/dbname
 框架会自动处理异步协议转换 (`postgresql+asyncpg://`)。
 
 ---
+
+## 🔐 初始凭据
+
+系统首次启动时会自动创建一个超级管理员账号。您可以在 `.env` 文件中自定义其账号和密码：
+
+```env
+FIRST_SUPERUSER=admin
+FIRST_SUPERUSER_PASSWORD=admin
+```
+
+> **注意**: 如果数据库中已存在同名用户，系统将不会重复创建或覆盖密码。
+
+---
 **Cosmic MVP** - 让您的 Idea 飞得更快。🚀

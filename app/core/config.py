@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
+    # 初始管理员配置
+    FIRST_SUPERUSER: str = "admin"
+    FIRST_SUPERUSER_PASSWORD: str = "admin"
+    
     # 数据库配置
     DATABASE_URL: str = "sqlite:///database.db"
     

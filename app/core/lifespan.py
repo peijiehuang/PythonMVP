@@ -23,14 +23,14 @@ async def lifespan(app: FastAPI):
     # 开发模式下：自动检测并创建表
     await create_db_and_tables()
     
-    # 初始化默认管理员：admin / admin
+    # 初始化默认管理员
     async with AsyncSession(engine) as session:
-        result = await session.execute(select(User).where(User.username == "admin"))
+        result = await session.execute(select(User).where(User.username == settings.FIRST_SUPERUSER))
         user = result.scalars().first()
         if not user:
-            logger.info("⚡ 正在初始化默认管理员用户: admin / admin")
-            hashed_pwd = get_password_hash("admin")
-            admin_user = User(username="admin", hashed_password=hashed_pwd)
+            logger.info(f"⚡ 正在初始化默认管理员用户: {settings.FIRST_SUPERUSER} / ******")
+            hashed_pwd = get_password_hash(settings.FIRST_SUPERUSER_PASSWORD)
+            admin_user = User(username=settings.FIRST_SUPERUSER, hashed_password=hashed_pwd)
             session.add(admin_user)
             await session.commit()
     
