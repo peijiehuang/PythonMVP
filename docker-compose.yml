@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    container_name: python-mvp-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/database.db
+      - SECRET_KEY=changethis_in_production
+    volumes:
+      - ./data:/app/data
+    restart: always
+
+# 如果未来引入 Postgres/Redis:
+#   db:
+#     image: postgres:15
+#     ...

@@ -21,6 +21,11 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
 bcrypt==4.1.2
 requests==2.31.0
+pydantic-settings
+alembic
+aiosqlite
+bcrypt==3.2.0
+pytest-asyncio
 
 pytest
 httpx

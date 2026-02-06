@@ -280,7 +280,7 @@
 
         createApp({
             setup() {
-                const API_URL = '/items/';
+                const API_URL = '/api/v1/items/';
                 const items = ref([]);
                 const keyword = ref("");
                 const loading = ref(false);
@@ -345,7 +345,7 @@
                         formData.append('username', loginForm.username);
                         formData.append('password', loginForm.password);
                         
-                        const res = await axios.post('/token', formData);
+                        const res = await axios.post('/api/v1/auth/token', formData);
                         const { access_token } = res.data;
                         
                         localStorage.setItem('token', access_token);
@@ -386,9 +386,8 @@
                     loading.value = true;
                     try {
                         const params = keyword.value ? { keyword: keyword.value } : {};
-                        // Read is public, so standard axios is fine, but using api instance is safer if we protect read later
                         const res = await api.get(API_URL, { params });
-                        items.value = res.data;
+                        items.value = res.data.data; // Access res.data.data
                     } catch (e) { console.error(e); }
                     finally { loading.value = false; }
                 };
@@ -404,7 +403,7 @@
                         }
                         item_modal.value.close();
                         fetchItems();
-                    } catch (e) { alert("Operation failed. " + (e.response?.data?.detail || e.message)); }
+                    } catch (e) { alert("Operation failed. " + (e.response?.data?.message || e.message)); } // Use .message
                     finally { submitting.value = false; }
                 };
 
