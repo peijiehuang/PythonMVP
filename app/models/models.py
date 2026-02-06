@@ -30,3 +30,22 @@ class Item(SQLModel, table=True):
         default_factory=lambda: datetime.now(timezone.utc),
         description="更新时间"
     )
+
+class TaskLog(SQLModel, table=True):
+    """后台任务执行日志表"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_name: str = Field(index=True, description="任务名称")
+    status: str = Field(description="执行状态 (SUCCESS/FAILED)")
+    execution_time: float = Field(description="执行耗时(秒)")
+    output: Optional[str] = Field(default=None, description="业务日志输出")
+    error_message: Optional[str] = Field(default=None, description="错误堆栈信息")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class TaskConfig(SQLModel, table=True):
+    """后台任务配置表"""
+    id: Optional[str] = Field(primary_key=True, description="任务唯一标识(函数名)")
+    label: str = Field(description="任务显示名称")
+    trigger_type: str = Field(default="interval", description="触发类型: interval/cron")
+    trigger_value: str = Field(default="5", description="触发值: 分钟数或cron表达式")
+    is_active: bool = Field(default=True, description="是否启用")
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台服务中心 - Cosmic MVP</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .refresh-progress { transition: width 1s linear; }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800">
+    <div id="app" v-cloak class="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
+        
+        <!-- 鉴权错误状态 -->
+        <div v-if="authError" class="min-h-[60vh] flex flex-col items-center justify-center text-center">
+            <div class="text-6xl mb-6">🔑</div>
+            <h2 class="text-2xl font-bold text-slate-800 mb-2">需要身份验证</h2>
+            <p class="text-slate-500 mb-8">管理后台任务需要管理员权限，请先在主页登录。</p>
+            <div class="flex gap-4">
+                <a href="/" class="btn btn-primary px-10 rounded-2xl">前往登录</a>
+                <button class="btn btn-outline px-10 rounded-2xl" @click="fetchData">重试刷新</button>
+            </div>
+        </div>
+
+        <!-- 正常管理界面 -->
+        <div v-else>
+            <!-- Header -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
+                <div>
+                    <nav class="text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
+                        <a href="/" class="hover:text-primary transition-colors">仪表盘</a>
+                        <span>/</span>
+                        <span class="text-slate-600">后台服务管理</span>
+                    </nav>
+                    <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
+                        后台任务引擎
+                        <div class="badge badge-primary badge-md">v3.5</div>
+                    </h1>
+                </div>
+                
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-3 bg-white px-5 py-2.5 rounded-2xl shadow-sm border border-slate-200">
+                        <span class="text-xs font-bold text-slate-500 uppercase tracking-tighter">实时监控</span>
+                        <input type="checkbox" class="toggle toggle-primary toggle-sm" v-model="autoRefresh" />
+                        <div v-if="autoRefresh" class="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-primary h-full refresh-progress" :style="{ width: (100 - countdown * 10) + '%' }"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-white border-slate-200 shadow-sm rounded-xl px-6" @click="fetchData" :disabled="loading">
+                        <span v-if="loading" class="loading loading-spinner loading-xs"></span>
+                        <span v-else>刷新数据</span>
+                    </button>
+                    <a href="/" class="btn btn-primary btn-sm rounded-xl">返回首页</a>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+                <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    <div class="text-slate-400 text-xs font-bold uppercase mb-1">任务总数</div>
+                    <div class="text-3xl font-black text-slate-900">{{ configs.length }}</div>
+                </div>
+                <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    <div class="text-slate-400 text-xs font-bold uppercase mb-1">活跃计划</div>
+                    <div class="text-3xl font-black text-primary">{{ jobsCount }}</div>
+                </div>
+                <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                    <div class="text-slate-400 text-xs font-bold uppercase mb-1">日志总量</div>
+                    <div class="text-3xl font-black text-slate-900">{{ logData.total }}</div>
+                </div>
+                <div class="bg-gradient-to-br from-indigo-600 to-primary p-6 rounded-3xl shadow-lg shadow-indigo-200">
+                    <div class="text-indigo-100 text-xs font-bold uppercase mb-1 text-opacity-80">系统状态</div>
+                    <div class="text-white text-xl font-bold truncate">Async Engine Ready</div>
+                </div>
+            </div>
+
+            <!-- Task List -->
+            <div class="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden mb-12">
+                <div class="overflow-x-auto">
+                    <table class="table table-lg w-full">
+                        <thead>
+                            <tr class="text-slate-400 border-none bg-slate-50/30">
+                                <th class="pl-10 text-[11px] uppercase tracking-widest py-6">任务详情</th>
+                                <th class="text-[11px] uppercase tracking-widest">执行策略</th>
+                                <th class="text-[11px] uppercase tracking-widest">健康状态</th>
+                                <th class="text-[11px] uppercase tracking-widest">下次运行</th>
+                                <th class="text-[11px] uppercase tracking-widest">启用</th>
+                                <th class="text-center text-[11px] uppercase tracking-widest pr-10">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="conf in configs" :key="conf.id" class="hover:bg-slate-50/80 transition-all border-b border-slate-50 last:border-none">
+                                <td class="pl-10 py-8">
+                                    <div class="font-black text-slate-800 text-lg">{{ conf.label }}</div>
+                                    <div class="badge badge-ghost badge-sm font-mono mt-1 opacity-60 text-[10px]">{{ conf.id }}</div>
+                                </td>
+                                <td>
+                                    <div class="flex flex-col">
+                                        <span class="font-bold text-slate-700">{{ conf.trigger_value }} 分钟</span>
+                                        <span class="text-[10px] text-slate-400 uppercase font-medium">{{ conf.trigger_type }}模式</span>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div v-if="conf.last_run" class="flex items-center gap-3">
+                                        <div :class="conf.last_status === 'SUCCESS' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-500 shadow-rose-200'" class="w-2.5 h-2.5 rounded-full shadow animate-pulse"></div>
+                                        <div class="flex flex-col">
+                                            <span class="text-slate-600 font-medium text-xs">{{ formatTime(conf.last_run) }}</span>
+                                            <span :class="conf.last_status === 'SUCCESS' ? 'text-emerald-500' : 'text-rose-500'" class="text-[10px] font-black tracking-widest uppercase">{{ conf.last_status }}</span>
+                                        </div>
+                                    </div>
+                                    <span v-else class="text-slate-300 italic text-sm">从未执行</span>
+                                </td>
+                                <td>
+                                    <div v-if="conf.next_run" class="flex items-center gap-2 text-primary font-bold text-xs">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        {{ formatTime(conf.next_run) }}
+                                    </div>
+                                    <span v-else class="text-slate-300 italic text-sm">计划挂起</span>
+                                </td>
+                                <td>
+                                    <input type="checkbox" class="toggle toggle-success toggle-sm" v-model="conf.is_active" @change="toggleTask(conf)" />
+                                </td>
+                                <td class="text-center pr-10">
+                                    <div class="join bg-slate-100 p-1 rounded-2xl">
+                                        <button class="btn btn-ghost btn-sm join-item rounded-xl text-primary font-bold" @click="openEditModal(conf)">设置</button>
+                                        <button class="btn btn-ghost btn-sm join-item rounded-xl text-slate-500" @click="runOnce(conf.id)">运行</button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="configs.length === 0">
+                                <td colspan="6" class="py-32 text-center opacity-30">
+                                    <div class="text-5xl mb-4">📦</div>
+                                    <h3 class="text-2xl font-bold">未检测到注入任务</h3>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Execution Logs -->
+            <div class="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
+                <div class="p-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
+                    <h2 class="text-xl font-extrabold text-slate-800">📜 历史执行追踪</h2>
+                    <button class="btn btn-ghost btn-sm text-rose-500 hover:bg-rose-50 rounded-xl px-4" @click="clearLogs">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        清空所有日志
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra w-full">
+                        <thead>
+                            <tr class="text-slate-400 border-none bg-slate-50/10">
+                                <th class="pl-10 text-[11px] uppercase tracking-widest py-5">执行时间</th>
+                                <th class="text-[11px] uppercase tracking-widest">任务名称</th>
+                                <th class="text-[11px] uppercase tracking-widest">状态</th>
+                                <th class="text-[11px] uppercase tracking-widest">耗时</th>
+                                <th class="text-center text-[11px] uppercase tracking-widest pr-10">详情</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-sm">
+                            <tr v-for="log in logData.items" :key="log.id">
+                                <td class="pl-10 font-mono text-[11px] text-slate-500">{{ formatTime(log.created_at) }}</td>
+                                <td class="font-black text-slate-700">{{ log.task_name }}</td>
+                                <td>
+                                    <div :class="log.status === 'SUCCESS' ? 'badge badge-success' : 'badge badge-error'" class="badge-sm text-white font-black text-[9px] uppercase tracking-wider">
+                                        {{ log.status }}
+                                    </div>
+                                </td>
+                                <td class="font-mono text-slate-400 text-[11px]">{{ log.execution_time }}s</td>
+                                <td class="text-center pr-10">
+                                    <button class="btn btn-ghost btn-xs underline font-bold text-slate-400 hover:text-primary" @click="showLogDetail(log)">记录</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Pagination -->
+                <div v-if="logData.pages > 1" class="p-8 bg-slate-50/20 flex justify-center border-t border-slate-50">
+                    <div class="join shadow-sm rounded-2xl overflow-hidden">
+                        <button class="join-item btn btn-sm bg-white" :disabled="logData.page <= 1" @click="changePage(logData.page - 1)">«</button>
+                        <button class="join-item btn btn-sm bg-white border-x-0 font-bold px-6 text-xs">第 {{ logData.page }} / {{ logData.pages }} 页</button>
+                        <button class="join-item btn btn-sm bg-white" :disabled="logData.page >= logData.pages" @click="changePage(logData.page + 1)">»</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Task Modal -->
+        <dialog ref="edit_modal" class="modal" @close="isModalOpen = false">
+            <div class="modal-box bg-white p-10 rounded-[2.5rem] shadow-2xl max-w-sm border border-slate-100">
+                <h3 class="text-2xl font-black text-slate-900 mb-8">任务配置</h3>
+                <div class="space-y-6">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold text-slate-500 uppercase text-[10px]">名称</span></label>
+                        <input type="text" v-model="editForm.label" class="input input-bordered w-full rounded-2xl" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold text-slate-500 uppercase text-[10px]">频率 (分)</span></label>
+                        <input type="number" step="0.1" v-model="editForm.trigger_value" class="input input-bordered w-full rounded-2xl" />
+                    </div>
+                    <div class="form-control pt-4">
+                        <label class="label cursor-pointer justify-between bg-slate-50 p-4 rounded-2xl">
+                            <span class="font-extrabold text-slate-700">启用状态</span>
+                            <input type="checkbox" v-model="editForm.is_active" class="toggle toggle-success" />
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-action mt-10 gap-3">
+                    <button class="btn btn-ghost rounded-2xl flex-1" @click="edit_modal.close()">取消</button>
+                    <button class="btn btn-primary rounded-2xl flex-1 text-white shadow-lg shadow-primary/20" @click="saveConfig" :disabled="saving">保存修改</button>
+                </div>
+            </div>
+        </dialog>
+
+        <!-- Log Detail Modal -->
+        <dialog ref="log_modal" class="modal" @close="isModalOpen = false">
+            <div class="modal-box w-11/12 max-w-3xl bg-white text-slate-800 p-0 overflow-hidden shadow-2xl rounded-[2rem]">
+                <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 class="font-extrabold text-lg flex items-center gap-2">📄 执行详情</h3>
+                    <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost text-slate-400">✕</button></form>
+                </div>
+                <div class="p-8">
+                    <div v-if="currentLog?.output" class="mb-8">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 mb-3 tracking-widest flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-emerald-500"></div> 业务输出日志
+                        </div>
+                        <pre class="bg-slate-50 text-slate-700 p-6 rounded-3xl font-mono text-[11px] whitespace-pre-wrap leading-relaxed max-h-[40vh] overflow-y-auto border border-slate-100 shadow-inner">{{ currentLog.output }}</pre>
+                    </div>
+                    <div v-if="currentLog?.error_message" class="mb-8">
+                        <div class="text-[10px] uppercase font-bold text-rose-400 mb-3 tracking-widest flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-rose-500"></div> 错误堆栈信息
+                        </div>
+                        <pre class="bg-rose-50/30 text-rose-700 p-6 rounded-3xl font-mono text-[11px] whitespace-pre-wrap leading-relaxed max-h-[40vh] overflow-y-auto border border-rose-100">{{ currentLog.error_message }}</pre>
+                    </div>
+                    <div v-if="!currentLog?.output && !currentLog?.error_message" class="text-emerald-600 text-center py-16 bg-emerald-50 rounded-3xl">✅ 任务顺利完成</div>
+                </div>
+                <div class="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end">
+                    <form method="dialog"><button class="btn btn-sm px-10 rounded-2xl bg-white border-slate-200">收起详情</button></form>
+                </div>
+            </div>
+        </dialog>
+
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, onMounted, onUnmounted } = Vue;
+        createApp({
+            setup() {
+                const configs = ref([]);
+                const jobsCount = ref(0);
+                const logData = reactive({ items: [], total: 0, page: 1, size: 20, pages: 1 });
+                const loading = ref(false);
+                const saving = ref(false);
+                const authError = ref(false);
+                const isModalOpen = ref(false); 
+                
+                const edit_modal = ref(null);
+                const log_modal = ref(null);
+                const currentLog = ref(null);
+                const editForm = reactive({ id: '', label: '', trigger_value: '', is_active: true });
+
+                const autoRefresh = ref(true); 
+                const countdown = ref(10.0);
+                let timer = null;
+
+                const api = axios.create({ baseURL: '/api/v1/tasks' });
+                api.interceptors.request.use(c => {
+                    const token = localStorage.getItem('token');
+                    if (token) c.headers.Authorization = `Bearer ${token}`;
+                    return c;
+                });
+
+                const fetchData = async () => {
+                    if (loading.value) return;
+                    loading.value = true;
+                    try {
+                        const [c, j, l] = await Promise.all([
+                            api.get('configs'),
+                            api.get('jobs'),
+                            api.get('logs', { params: { page: logData.page, size: logData.size } })
+                        ]);
+                        configs.value = c.data.data;
+                        jobsCount.value = j.data.data.length;
+                        Object.assign(logData, l.data.data);
+                        authError.value = false;
+                    } catch (e) { 
+                        if (e.response?.status === 401) authError.value = true;
+                    } finally {
+                        loading.value = false;
+                        countdown.value = 10.0;
+                    }
+                };
+
+                const runTimer = () => {
+                    if (timer) clearTimeout(timer);
+                    timer = setTimeout(async () => {
+                        if (autoRefresh.value && !isModalOpen.value && !authError.value) {
+                            countdown.value -= 0.1;
+                            if (countdown.value <= 0) await fetchData();
+                        }
+                        runTimer();
+                    }, 100);
+                };
+
+                const changePage = (p) => { logData.page = p; fetchData(); };
+                const openEditModal = (task) => { isModalOpen.value = true; Object.assign(editForm, { ...task }); edit_modal.value.showModal(); };
+                const showLogDetail = (log) => { isModalOpen.value = true; currentLog.value = log; log_modal.value.showModal(); };
+                
+                const saveConfig = async () => {
+                    saving.value = true;
+                    try {
+                        await api.patch(`configs/${editForm.id}`, {
+                            label: editForm.label,
+                            trigger_value: editForm.trigger_value.toString(),
+                            is_active: editForm.is_active
+                        });
+                        edit_modal.value.close();
+                        isModalOpen.value = false;
+                        fetchData();
+                    } finally { saving.value = false; }
+                };
+
+                const toggleTask = async (conf) => {
+                    await api.patch(`configs/${conf.id}`, { is_active: conf.is_active });
+                    fetchData();
+                };
+
+                const runOnce = async (tid) => {
+                    await api.post(`run/${tid}`);
+                    alert("任务已成功触发");
+                    fetchData();
+                };
+
+                const clearLogs = async () => {
+                    if(!confirm("⚠️ 确定要清空所有历史执行记录吗？此操作不可恢复。")) return;
+                    try {
+                        await api.delete('logs');
+                        fetchData();
+                    } catch (e) { alert("清空失败"); }
+                };
+
+                onMounted(() => { fetchData(); runTimer(); });
+                onUnmounted(() => { if (timer) clearTimeout(timer); });
+
+                return { 
+                    configs, jobsCount, logData, editForm, edit_modal, log_modal, currentLog, saving, loading, authError,
+                    autoRefresh, countdown, isModalOpen,
+                    changePage, fetchData, openEditModal, showLogDetail, saveConfig, toggleTask, runOnce, clearLogs,
+                    formatTime: (iso) => iso ? new Date(iso).toLocaleString() : '-'
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

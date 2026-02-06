@@ -1,1 +1,1 @@
-from app.models.models import User, Item
+from app.models.models import User, Item, TaskLog, TaskConfig

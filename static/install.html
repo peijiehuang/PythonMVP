@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统状态 - Cosmic MVP</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4">
+    <div id="app" class="card w-full max-w-lg bg-white shadow-xl">
+        <div class="card-body">
+            
+            <!-- 状态 1：已安装 -->
+            <div v-if="isInstalled" class="text-center">
+                <div class="text-6xl mb-6">🔒</div>
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">系统已锁定</h2>
+                <div class="badge badge-success gap-2 mb-6">已完成初始化安装</div>
+                
+                <div class="bg-slate-50 rounded-2xl p-6 text-left mb-8 border border-slate-100">
+                    <p class="text-sm text-slate-500 mb-4">为了保障您的数据安全，安装程序已自动禁用。</p>
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-xs">
+                            <span class="font-medium text-slate-400">运行环境</span>
+                            <span class="text-slate-600">Production Ready</span>
+                        </div>
+                        <div class="flex justify-between text-xs">
+                            <span class="font-medium text-slate-400">重装方式</span>
+                            <span class="text-slate-600">手动删除 .env 文件</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="btn btn-primary w-full rounded-xl" @click="goHome">返回仪表盘</button>
+            </div>
+
+            <!-- 状态 2：安装向导 -->
+            <div v-else-if="!done">
+                <h2 class="card-title text-2xl font-bold text-primary mb-2">🌌 Cosmic MVP 安装向导</h2>
+                <div class="alert alert-success shadow-sm text-xs mb-6 bg-emerald-50 border-emerald-100 text-emerald-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>温馨提示：安装程序将保留您的现有业务数据，仅同步配置。</span>
+                </div>
+
+                <div class="space-y-5">
+                    <div class="form-control w-full">
+                        <label class="label"><span class="label-text font-bold text-slate-600">项目名称</span></label>
+                        <input type="text" v-model="form.project_name" class="input input-bordered w-full rounded-xl" placeholder="例如: My Awesome SaaS" />
+                    </div>
+
+                    <div class="form-control w-full">
+                        <label class="label"><span class="label-text font-bold text-slate-600">管理员账号</span></label>
+                        <input type="text" v-model="form.admin_user" class="input input-bordered w-full rounded-xl" placeholder="admin" />
+                    </div>
+
+                    <div class="form-control w-full">
+                        <label class="label"><span class="label-text font-bold text-slate-600">管理员密码</span></label>
+                        <input type="password" v-model="form.admin_pwd" class="input input-bordered w-full rounded-xl" placeholder="请输入高强度密码" />
+                    </div>
+                </div>
+
+                <div class="card-actions mt-10">
+                    <button class="btn btn-primary w-full rounded-xl shadow-lg shadow-primary/20" @click="install" :disabled="loading">
+                        <span v-if="loading" class="loading loading-spinner"></span>
+                        {{ loading ? '正在配置环境...' : '立即安装' }}
+                    </button>
+                </div>
+            </div>
+
+            <!-- 状态 3：安装成功 -->
+            <div v-else class="text-center py-6">
+                <div class="text-6xl mb-6">✨</div>
+                <h2 class="text-2xl font-bold text-emerald-600 mb-2">安装大功告成！</h2>
+                <p class="text-slate-500 mb-8">配置文件已安全生成，数据库结构已同步完成。</p>
+                <button class="btn btn-success w-full rounded-xl text-white shadow-lg shadow-emerald-500/20" @click="goHome">进入控制台</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const { createApp, reactive, ref, onMounted } = Vue;
+        createApp({
+            setup() {
+                const form = reactive({ project_name: 'Cosmic MVP API', admin_user: 'admin', admin_pwd: '' });
+                const loading = ref(false);
+                const done = ref(false);
+                const isInstalled = ref(false);
+
+                onMounted(async () => {
+                    try {
+                        const res = await axios.get('/api/v1/install/check');
+                        if (res.data.installed) {
+                            isInstalled.value = true;
+                        }
+                    } catch (e) {
+                        console.error("检测安装状态失败");
+                    }
+                });
+
+                const install = async () => {
+                    if(!form.admin_pwd) return alert("请设置管理员密码");
+                    loading.value = true;
+                    try {
+                        const params = new URLSearchParams();
+                        params.append('project_name', form.project_name);
+                        params.append('admin_user', form.admin_user);
+                        params.append('admin_pwd', form.admin_pwd);
+                        
+                        await axios.post('/api/v1/install/setup', params);
+                        done.value = true;
+                    } catch (e) {
+                        alert(e.response?.data?.detail || "安装过程中发生错误");
+                    } finally {
+                        loading.value = false;
+                    }
+                };
+
+                const goHome = () => window.location.href = '/';
+
+                return { form, loading, done, isInstalled, install, goHome };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
