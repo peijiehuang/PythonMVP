@@ -8,10 +8,10 @@ sys.path.append(os.getcwd())
 async def force_sync():
     print("🚀 正在强制同步后台任务到数据库...")
     from app.core.scheduler import start_scheduler, sync_scheduler_with_db, task_registry
-    from app.core.database import create_db_and_tables
-    
+    from app.core.database import init_db
+
     # 1. 确保表存在
-    await create_db_and_tables()
+    await init_db()
     
     # 2. 触发模块扫描
     start_scheduler()

@@ -26,13 +26,21 @@ app = FastAPI(
 
 # --- 2. 安装检测中间件 ---
 
+# 应用级安装状态标志，避免每次请求都检测文件系统
+_installed = os.path.exists(".env")
+
+def mark_installed():
+    """安装完成后调用，更新内存标志"""
+    global _installed
+    _installed = True
+
 @app.middleware("http")
 async def check_installation(request: Request, call_next):
-    # 如果检测到没有 .env 文件
-    if not os.path.exists(".env"):
+    # 如果检测到没有安装
+    if not _installed:
         path = request.url.path
         # 允许访问安装页面、静态资源和安装接口
-        if path not in ["/install", "/api/v1/install/setup"] and not path.startswith("/static"):
+        if path not in ["/install", "/api/v1/install/setup", "/api/v1/install/check"] and not path.startswith("/static"):
             return RedirectResponse(url="/install")
     return await call_next(request)
 
@@ -48,16 +56,21 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"发生未处理异常: {str(exc)}", exc_info=True)
+    # 仅在 DEBUG 模式下返回异常详情，生产环境隐藏内部信息
+    if settings.LOG_LEVEL.upper() == "DEBUG":
+        message = f"服务器内部错误: {str(exc)}"
+    else:
+        message = "服务器内部错误，请稍后重试"
     return JSONResponse(
         status_code=500,
-        content=resp_err(message=f"服务器内部错误: {str(exc)}")
+        content=resp_err(message=message)
     )
 
 # --- 4. 中间件与路由 ---
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,12 +78,21 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
+# 注册安装完成回调，使中间件标志能及时更新
+from app.api.endpoints.install import set_mark_installed_callback
+set_mark_installed_callback(mark_installed)
+
 # --- 5. 静态文件与安装入口 ---
 
 @app.get("/install")
 async def get_install_page():
     """安装向导页面"""
     return FileResponse("static/install.html")
+
+@app.get("/codegen")
+async def get_codegen_page():
+    """代码生成器页面"""
+    return FileResponse("static/codegen.html")
 
 @app.get("/")
 async def read_index():

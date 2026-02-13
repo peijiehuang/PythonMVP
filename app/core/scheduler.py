@@ -7,7 +7,6 @@ import os
 from datetime import datetime, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.ext.asyncio import AsyncSession
-from functools import wraps
 from sqlmodel import select
 from contextvars import ContextVar
 
@@ -36,10 +35,7 @@ def register_task(label: str):
     def decorator(func):
         task_id = func.__name__
         task_registry[task_id] = {"func": func, "label": label}
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            return await func(*args, **kwargs)
-        return wrapper
+        return func
     return decorator
 
 def task_wrapper(task_id: str):
@@ -88,18 +84,22 @@ async def sync_scheduler_with_db():
         db_configs = result.scalars().all()
         db_ids = {c.id for c in db_configs}
 
+        new_tasks_added = False
         for tid, info in task_registry.items():
             if tid not in db_ids:
                 new_conf = TaskConfig(id=tid, label=info["label"], is_active=True)
                 session.add(new_conf)
-                await session.commit()
-                print(f"✨ 发现新后台任务并入库: {tid}")
+                new_tasks_added = True
+                logger.info(f"发现新后台任务并入库: {tid}")
+
+        if new_tasks_added:
+            await session.commit()
+            # 重新获取包含新任务的完整配置
+            result = await session.execute(select(TaskConfig))
+            db_configs = result.scalars().all()
 
         # 2. 根据数据库最新状态重建调度队列
-        result = await session.execute(select(TaskConfig))
-        latest_configs = result.scalars().all()
-
-        for config in latest_configs:
+        for config in db_configs:
             # 清除旧计划
             if scheduler.get_job(config.id):
                 scheduler.remove_job(config.id)

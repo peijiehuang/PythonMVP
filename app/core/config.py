@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # 数据库配置
     DATABASE_URL: str = "sqlite:///database.db"
     
+    # CORS 配置（逗号分隔的域名列表）
+    CORS_ORIGINS: str = "http://localhost:8000"
+
     # 日志配置
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

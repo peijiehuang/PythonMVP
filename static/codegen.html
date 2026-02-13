@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Generator</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.6.0/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        primary: '#4F46E5',
+                        surface: '#ffffff',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+        }
+
+        .ambient-light {
+            position: fixed;
+            top: -20%;
+            left: -10%;
+            width: 50%;
+            height: 50%;
+            background: radial-gradient(circle, rgba(79, 70, 229, 0.15) 0%, rgba(255, 255, 255, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .ambient-light-2 {
+            position: fixed;
+            bottom: -20%;
+            right: -10%;
+            width: 50%;
+            height: 50%;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .card-hover {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.8rem;
+            line-height: 1.6;
+            overflow-x: auto;
+            white-space: pre;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .table-card {
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .table-card:hover {
+            border-color: #4F46E5;
+        }
+
+        .table-card.selected {
+            border-color: #4F46E5;
+            background: rgba(79, 70, 229, 0.05);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+    </style>
+</head>
+
+<body class="text-slate-800 min-h-screen relative overflow-x-hidden">
+
+    <div class="ambient-light"></div>
+    <div class="ambient-light-2"></div>
+
+    <div id="app" class="max-w-6xl mx-auto py-12 px-6">
+
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+            <div>
+                <div class="text-xs font-bold text-primary tracking-widest uppercase mb-2">Developer Tools</div>
+                <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">
+                    Code <span class="text-slate-300">/</span> Generator
+                </h1>
+                <p class="text-slate-500 mt-2 font-light">
+                    Select a table to generate CRUD code automatically.
+                </p>
+            </div>
+            <div class="flex gap-3 items-center">
+                <a href="/" class="btn btn-ghost btn-circle btn-sm text-slate-400 hover:text-primary" title="返回首页">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4" />
+                    </svg>
+                </a>
+                <div v-if="!user">
+                    <button @click="openLoginModal" class="btn btn-ghost btn-sm text-slate-500 hover:text-primary">
+                        Login
+                    </button>
+                </div>
+                <div v-else class="dropdown dropdown-end">
+                    <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar placeholder">
+                        <div class="bg-primary text-white rounded-full w-10">
+                            <span class="text-xs">{{ user.username.substring(0, 2).toUpperCase() }}</span>
+                        </div>
+                    </div>
+                    <ul tabindex="0"
+                        class="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
+                        <li><a @click="logout" class="text-red-500">Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Table Selection -->
+        <div class="mb-8">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                <span
+                    class="w-7 h-7 rounded-full bg-primary text-white text-xs flex items-center justify-center font-bold">1</span>
+                Select a Table
+            </h2>
+
+            <div v-if="loadingTables" class="flex items-center gap-3 py-8">
+                <span class="loading loading-spinner loading-md text-primary"></span>
+                <span class="text-slate-400">Loading tables...</span>
+            </div>
+
+            <div v-else-if="tables.length === 0" class="text-center py-8">
+                <p class="text-slate-500" v-if="!user">Please login first to use the code generator.</p>
+                <p class="text-slate-500" v-else>No business tables found. Create a model in
+                    <code>app/models/models.py</code> first.</p>
+            </div>
+
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div v-for="table in tables" :key="table.table_name" @click="selectTable(table)"
+                    class="table-card border-2 border-slate-200 rounded-2xl p-5 bg-white/70 backdrop-blur-sm"
+                    :class="{ 'selected': selectedTable && selectedTable.table_name === table.table_name }">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-800">{{ table.class_name }}</h3>
+                            <p class="text-xs text-slate-400">{{ table.table_name }}</p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                        <span v-for="col in table.columns" :key="col.name"
+                            class="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                            :class="col.primary_key ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'">
+                            {{ col.name }}
+                            <span class="text-slate-300">{{ col.type }}</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Code Preview -->
+        <div v-if="preview" class="mb-8">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                <span
+                    class="w-7 h-7 rounded-full bg-primary text-white text-xs flex items-center justify-center font-bold">2</span>
+                Preview Generated Code
+            </h2>
+
+            <!-- Tabs -->
+            <div class="flex gap-2 mb-4">
+                <button v-for="tab in tabs" :key="tab.key" @click="activeTab = tab.key"
+                    class="btn btn-sm rounded-xl transition-all"
+                    :class="activeTab === tab.key ? 'btn-primary text-white' : 'btn-ghost text-slate-500'">
+                    {{ tab.label }}
+                </button>
+            </div>
+
+            <!-- Code File Info -->
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2 text-sm text-slate-500">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span class="font-mono">{{ preview[activeTab].path }}</span>
+                </div>
+                <button @click="downloadFile(activeTab)"
+                    class="btn btn-ghost btn-sm text-slate-500 hover:text-primary gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download
+                </button>
+            </div>
+
+            <!-- Code Block -->
+            <div class="code-block">{{ preview[activeTab].code }}</div>
+        </div>
+
+        <!-- Step 3: Actions -->
+        <div v-if="preview" class="mb-8">
+            <h2 class="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+                <span
+                    class="w-7 h-7 rounded-full bg-primary text-white text-xs flex items-center justify-center font-bold">3</span>
+                Save to Project
+            </h2>
+
+            <div class="bg-white/70 backdrop-blur-sm border border-white/50 rounded-2xl p-6">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800 mb-1">One-Click Save</h3>
+                        <p class="text-sm text-slate-500">
+                            Write files, register routes, and add page navigation automatically.
+                        </p>
+                    </div>
+                    <div class="flex gap-3">
+                        <button @click="downloadAll" class="btn btn-outline btn-sm rounded-xl gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download All
+                        </button>
+                        <button @click="saveToProject"
+                            class="btn btn-primary border-none bg-primary hover:bg-indigo-700 text-white shadow-lg shadow-primary/30 rounded-xl px-6 gap-1"
+                            :disabled="saving">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                                stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                            </svg>
+                            {{ saving ? 'Saving...' : 'Save to Project' }}
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Save Result -->
+                <div v-if="saveResult" class="mt-4 p-4 rounded-xl" :class="saveResult.success ? 'bg-emerald-50' : 'bg-red-50'">
+                    <div class="flex items-start gap-2">
+                        <svg v-if="saveResult.success" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-emerald-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <svg v-else xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <p class="font-medium" :class="saveResult.success ? 'text-emerald-700' : 'text-red-700'">
+                                {{ saveResult.message }}
+                            </p>
+                            <ul v-if="saveResult.files && saveResult.files.length" class="mt-2 text-sm text-slate-600 space-y-1">
+                                <li v-for="f in saveResult.files" :key="f" class="flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    <code class="text-xs">{{ f }}</code>
+                                </li>
+                            </ul>
+                            <p v-if="saveResult.success" class="mt-3 text-sm text-slate-500">
+                                Restart the dev server to apply changes: <code class="bg-white px-2 py-0.5 rounded text-xs font-bold">python run.py dev</code>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Login Modal -->
+        <dialog ref="login_modal" class="modal backdrop-blur-sm">
+            <div class="modal-box bg-white p-8 rounded-3xl shadow-2xl border border-slate-100 max-w-sm">
+                <form method="dialog"><button
+                        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button></form>
+                <div class="text-center mb-6">
+                    <h3 class="font-bold text-2xl text-slate-900">Welcome Back</h3>
+                    <p class="text-slate-500 text-sm mt-1">Please sign in to continue.</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="form-control w-full">
+                        <input type="text" v-model="loginForm.username" placeholder="Username"
+                            class="input input-bordered w-full rounded-xl" @keyup.enter="handleLogin" />
+                    </div>
+                    <div class="form-control w-full">
+                        <input type="password" v-model="loginForm.password" placeholder="Password"
+                            class="input input-bordered w-full rounded-xl" @keyup.enter="handleLogin" />
+                    </div>
+                    <div v-if="loginError" class="text-red-500 text-xs text-center">{{ loginError }}</div>
+                </div>
+
+                <div class="modal-action mt-6">
+                    <button class="btn btn-primary w-full rounded-xl shadow-lg shadow-primary/20" @click="handleLogin"
+                        :disabled="submitting">
+                        {{ submitting ? 'Signing In...' : 'Sign In' }}
+                    </button>
+                </div>
+                <div class="text-center mt-4">
+                    <span class="text-xs text-slate-400">Default: admin / admin</span>
+                </div>
+            </div>
+        </dialog>
+
+    </div>
+
+    <script>
+        const { createApp, ref, reactive, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                // State
+                const tables = ref([]);
+                const selectedTable = ref(null);
+                const preview = ref(null);
+                const activeTab = ref('endpoint');
+                const loadingTables = ref(false);
+                const saving = ref(false);
+                const saveResult = ref(null);
+
+                // Auth
+                const user = ref(null);
+                const loginForm = reactive({ username: '', password: '' });
+                const loginError = ref('');
+                const submitting = ref(false);
+                const login_modal = ref(null);
+
+                const tabs = [
+                    { key: 'endpoint', label: 'Endpoint' },
+                    { key: 'schema', label: 'Schema' },
+                    { key: 'frontend', label: 'Frontend' },
+                ];
+
+                // Axios
+                const api = axios.create();
+
+                api.interceptors.request.use(config => {
+                    const token = localStorage.getItem('token');
+                    if (token) config.headers.Authorization = `Bearer ${token}`;
+                    return config;
+                });
+
+                api.interceptors.response.use(
+                    response => response,
+                    error => {
+                        if (error.response && error.response.status === 401) {
+                            logout();
+                            openLoginModal();
+                        }
+                        return Promise.reject(error);
+                    }
+                );
+
+                // Auth methods
+                const initAuth = async () => {
+                    const token = localStorage.getItem('token');
+                    const username = localStorage.getItem('username');
+                    if (token && username) {
+                        try {
+                            await api.get('/api/v1/auth/me');
+                            user.value = { username };
+                        } catch (e) {
+                            localStorage.removeItem('token');
+                            localStorage.removeItem('username');
+                        }
+                    }
+                };
+
+                const openLoginModal = () => {
+                    loginError.value = '';
+                    loginForm.username = '';
+                    loginForm.password = '';
+                    login_modal.value.showModal();
+                };
+
+                const handleLogin = async () => {
+                    if (!loginForm.username || !loginForm.password) return;
+                    submitting.value = true;
+                    loginError.value = '';
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('username', loginForm.username);
+                        formData.append('password', loginForm.password);
+
+                        const res = await axios.post('/api/v1/auth/token', formData);
+                        const { access_token } = res.data;
+
+                        localStorage.setItem('token', access_token);
+                        localStorage.setItem('username', loginForm.username);
+                        user.value = { username: loginForm.username };
+
+                        login_modal.value.close();
+                        fetchTables();
+                    } catch (e) {
+                        loginError.value = "Login failed. Please check credentials.";
+                    } finally {
+                        submitting.value = false;
+                    }
+                };
+
+                const logout = () => {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('username');
+                    user.value = null;
+                    tables.value = [];
+                    preview.value = null;
+                    selectedTable.value = null;
+                };
+
+                // Table methods
+                const fetchTables = async () => {
+                    if (!user.value) return;
+                    loadingTables.value = true;
+                    try {
+                        const res = await api.get('/api/v1/codegen/tables');
+                        tables.value = res.data.data;
+                    } catch (e) {
+                        console.error('Failed to load tables:', e);
+                    } finally {
+                        loadingTables.value = false;
+                    }
+                };
+
+                const selectTable = async (table) => {
+                    selectedTable.value = table;
+                    preview.value = null;
+                    saveResult.value = null;
+                    activeTab.value = 'endpoint';
+
+                    try {
+                        const res = await api.post('/api/v1/codegen/preview', {
+                            table_name: table.table_name
+                        });
+                        preview.value = res.data.data;
+                    } catch (e) {
+                        alert('Failed to generate preview: ' + (e.response?.data?.message || e.message));
+                    }
+                };
+
+                // Download
+                const downloadFile = (fileType) => {
+                    if (!preview.value) return;
+                    const fileData = preview.value[fileType];
+                    const blob = new Blob([fileData.code], { type: 'text/plain;charset=utf-8' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = fileData.filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+
+                const downloadAll = () => {
+                    downloadFile('endpoint');
+                    setTimeout(() => downloadFile('schema'), 100);
+                    setTimeout(() => downloadFile('frontend'), 200);
+                };
+
+                // Save
+                const saveToProject = async () => {
+                    if (!selectedTable.value) return;
+                    saving.value = true;
+                    saveResult.value = null;
+
+                    try {
+                        const res = await api.post('/api/v1/codegen/save', {
+                            table_name: selectedTable.value.table_name
+                        });
+                        saveResult.value = {
+                            success: true,
+                            message: res.data.message,
+                            files: res.data.data?.written_files || []
+                        };
+                    } catch (e) {
+                        saveResult.value = {
+                            success: false,
+                            message: e.response?.data?.detail || e.response?.data?.message || 'Save failed.',
+                            files: []
+                        };
+                    } finally {
+                        saving.value = false;
+                    }
+                };
+
+                onMounted(async () => {
+                    await initAuth();
+                    fetchTables();
+                });
+
+                return {
+                    tables, selectedTable, preview, activeTab, loadingTables, saving, saveResult,
+                    user, loginForm, loginError, submitting, login_modal, tabs,
+                    selectTable, downloadFile, downloadAll, saveToProject,
+                    openLoginModal, handleLogin, logout, fetchTables
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+
+</html>

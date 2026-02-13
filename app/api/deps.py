@@ -8,7 +8,7 @@ from sqlmodel import select
 
 from app.core import security
 from app.core.config import settings
-from app.core.database import get_session as get_db_session
+from app.core.database import async_session_maker
 from app.models.models import User
 from app.schemas.schemas import TokenData
 
@@ -17,7 +17,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """依赖注入：获取数据库会话"""
-    async for session in get_db_session():
+    async with async_session_maker() as session:
         yield session
 
 # 类型别名：简化路由中的注入声明

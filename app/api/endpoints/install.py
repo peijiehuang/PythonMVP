@@ -5,13 +5,19 @@ import secrets
 import logging
 from app.core.config import settings
 from app.core.database import engine
-from app.core.security import get_password_hash
-from app.models.models import User
+from app.core.security import ensure_admin_user
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, SQLModel
+from sqlmodel import SQLModel
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# 延迟导入避免循环引用的标记回调
+_mark_installed_callback = None
+
+def set_mark_installed_callback(callback):
+    global _mark_installed_callback
+    _mark_installed_callback = callback
 
 @router.get("/check")
 async def check_status():
@@ -56,42 +62,29 @@ LOG_LEVEL=INFO
         # 3. 写入 .env 文件
         with open(".env", "w", encoding="utf-8") as f:
             f.write(env_content)
-        
-        # 4. 同步更新内存中的配置对象
+
+        # 4. 同步数据库结构（非破坏性：仅创建缺失的表，不删除数据）
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+
+        # 5. 管理员账号处理 (创建或重置)
+        async with AsyncSession(engine) as session:
+            msg = await ensure_admin_user(session, admin_user, admin_pwd)
+
+        # 6. 文件写入成功后再更新内存中的配置对象
         settings.PROJECT_NAME = project_name
         settings.SECRET_KEY = random_secret
         settings.FIRST_SUPERUSER = admin_user
         settings.FIRST_SUPERUSER_PASSWORD = admin_pwd
-        
-        # 5. 同步数据库结构（非破坏性：仅创建缺失的表，不删除数据）
-        async with engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
-        
-        # 6. 管理员账号处理 (创建或重置)
-        async with AsyncSession(engine) as session:
-            # 查询是否存在该用户
-            result = await session.execute(select(User).where(User.username == admin_user))
-            existing_user = result.scalars().first()
-            hashed_pwd = get_password_hash(admin_pwd)
-            
-            if existing_user:
-                # 存在则更新密码（视为找回管理员权限）
-                existing_user.hashed_password = hashed_pwd
-                session.add(existing_user)
-                msg = f"配置同步成功，已重置管理员 {admin_user} 的密码。"
-            else:
-                # 不存在则新建
-                admin_user_obj = User(username=admin_user, hashed_password=hashed_pwd)
-                session.add(admin_user_obj)
-                msg = f"安装成功！已创建管理员账号 {admin_user}。"
-            
-            await session.commit()
-            
-        logger.info(f"✨ 系统配置已重置/初始化。管理员: {admin_user}")
-        return {"success": True, "message": msg}
+
+        logger.info(f"系统配置已重置/初始化。管理员: {admin_user}")
+        # 更新内存安装标志，后续请求不再检测文件系统
+        if _mark_installed_callback:
+            _mark_installed_callback()
+        return {"success": True, "message": f"安装成功！{msg}"}
         
     except Exception as e:
         if os.path.exists(".env"):
             os.remove(".env")
-        logger.error(f"安装失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"安装失败: {str(e)}")
+        logger.error(f"安装失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="安装失败，请检查日志获取详细信息")

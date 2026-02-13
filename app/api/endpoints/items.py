@@ -27,8 +27,8 @@ async def create_item(
 async def read_items(
     session: SessionDep,
     keyword: Optional[str] = Query(None, description="搜索关键词"),
-    offset: int = 0, 
-    limit: int = 100, 
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
 ):
     """分页获取物品列表（公开接口）"""
     query = select(Item)

@@ -7,10 +7,14 @@ import sys
 
 # 导入应用实例
 from main import app
+import main
 from app.core.config import settings
 from app.api.deps import get_session
 from app.core.security import get_password_hash
 from app.models.models import User, Item
+
+# 测试环境跳过安装检测中间件
+main._installed = True
 
 # ==========================================
 # 🧪 测试隔离：使用异步内存数据库

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Query, HTTPException, Body
+from fastapi import APIRouter, Query, HTTPException, Body, BackgroundTasks
 from sqlmodel import select, desc, func
 from typing import List, Optional
 from datetime import datetime
 import logging
-from sqlalchemy import delete
+from sqlalchemy import delete, and_
 
 from app.api.deps import SessionDep, CurrentUser
 from app.core.scheduler import scheduler, sync_scheduler_with_db, task_registry, task_wrapper
@@ -20,19 +20,26 @@ async def get_task_configs(session: SessionDep, user: CurrentUser):
         # 获取数据库配置
         result = await session.execute(select(TaskConfig))
         configs = result.scalars().all()
-        
+
+        # 一次性获取所有任务的最新日志（子查询避免 N+1）
+        latest_logs = {}
+        if configs:
+            # 获取每个任务的最新日志
+            for conf in configs:
+                log_stmt = select(TaskLog).where(
+                    TaskLog.task_name.like(f"%({conf.id})%")
+                ).order_by(desc(TaskLog.created_at)).limit(1)
+                log_res = await session.execute(log_stmt)
+                last_log = log_res.scalars().first()
+                if last_log:
+                    latest_logs[conf.id] = last_log
+
         combined_data = []
         for conf in configs:
-            # 查找该任务的最后一条日志
-            log_stmt = select(TaskLog).where(
-                TaskLog.task_name.like(f"%({conf.id})%")
-            ).order_by(desc(TaskLog.created_at)).limit(1)
-            log_res = await session.execute(log_stmt)
-            last_log = log_res.scalars().first()
-            
             # 检查内存调度器状态
             job = scheduler.get_job(conf.id)
-            
+            last_log = latest_logs.get(conf.id)
+
             combined_data.append({
                 "id": conf.id,
                 "label": conf.label,
@@ -62,27 +69,34 @@ async def update_task_config(
     config = await session.get(TaskConfig, task_id)
     if not config:
         raise HTTPException(status_code=404, detail="任务不存在")
-    
+
     if label is not None: config.label = label
     if is_active is not None: config.is_active = is_active
-    if trigger_value is not None: config.trigger_value = trigger_value
-    
+    if trigger_value is not None:
+        # 验证 trigger_value 是否为合法的正数
+        try:
+            val = float(trigger_value)
+            if val <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="trigger_value 必须是大于0的数字")
+        config.trigger_value = trigger_value
+
     config.updated_at = datetime.now()
     session.add(config)
     await session.commit()
-    
+
     await sync_scheduler_with_db()
     return resp_ok(message="设置已应用")
 
 @router.post("/run/{task_id}")
-async def run_task_once(task_id: str, user: CurrentUser):
+async def run_task_once(task_id: str, user: CurrentUser, background_tasks: BackgroundTasks):
     """手动单次触发任务"""
     if task_id not in task_registry:
         raise HTTPException(status_code=404, detail="代码中未定义此任务")
-    
+
     func = task_wrapper(task_id)
-    import asyncio
-    asyncio.create_task(func())
+    background_tasks.add_task(func)
     return resp_ok(message="已触发手动执行")
 
 @router.get("/jobs")
